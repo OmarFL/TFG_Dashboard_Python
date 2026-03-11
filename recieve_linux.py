@@ -11,7 +11,11 @@ telemetria_vipv = {
     "Accel_Y": 0.0,
     "Accel_Z": 0.0,
     "Heartbeat_Entorno": 0,
-    "Heartbeat_Dinamica": 0
+    "Heartbeat_Dinamica": 0,
+    "Heartbeat_Energia": 0,
+    "Voltaje": 0.0,
+    "Corriente": 0.0,
+    "Potencia": 0.0
 }
 
 
@@ -46,6 +50,7 @@ try:
                 telemetria_vipv["Heartbeat_Entorno"] = msg.data[7]
                 
                 print(f"[ENTORNO] Temp: {temp:.2f} ºC | Seq: {msg.data[7]}")
+
                 
             # --- PROCESAMIENTO TRAMA DINÁMICA (0x101) ---
             elif msg.arbitration_id == 0x101:
@@ -62,6 +67,22 @@ try:
                 telemetria_vipv["Heartbeat_Dinamica"] = msg.data[7]
                 
                 print(f"[DINÁMICA] X:{ax:.2f}g | Y:{ay:.2f}g | Z:{az:.2f}g | Seq: {msg.data[7]}")
+
+
+            # --- PROCESAMIENTO TRAMA ENERGÍA (0x102) ---
+            elif msg.arbitration_id == 0x102:
+                # Voltaje viene escalado por 100 (usamos la función por defecto)
+                volts = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=100.0)
+                # Corriente y Potencia vienen escaladas por 1000 (miliAmperios y miliVatios)
+                amps = bytes_to_float_escalado(msg.data[2], msg.data[3], escala=1000.0)
+                watts = bytes_to_float_escalado(msg.data[4], msg.data[5], escala=1000.0)
+                
+                telemetria_vipv["Voltaje"] = volts
+                telemetria_vipv["Corriente"] = amps
+                telemetria_vipv["Potencia"] = watts
+                telemetria_vipv["Heartbeat_Energia"] = msg.data[7]
+
+                print(f"[ENERGÍA] V: {volts:.2f}V | I: {amps:.3f}A | P: {watts:.2f}W | Seq: {msg.data[7]}")
                 pass 
 
 except KeyboardInterrupt:

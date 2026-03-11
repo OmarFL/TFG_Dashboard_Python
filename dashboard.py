@@ -5,8 +5,8 @@ from collections import deque
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="VIPV Telemetry", page_icon="🏎️", layout="wide")
-st.title("🛰️ Panel de Telemetría del VIPV en Tiempo Real")
-st.markdown("Monitorización del Bus CAN0 (ID: 0x100 Entorno | ID: 0x101 Dinámica)")
+st.title("🏎️ Panel de Telemetría VIPV en Tiempo Real")
+st.markdown("Monitorización del Bus CAN | Nodo STM32 de Adquisición de Datos")
 
 # --- FUNCIÓN DE CONVERSIÓN DE LOS DATOS RECIBIDOS ---
 def bytes_to_float_escalado(byte_alto, byte_bajo, escala=100.0):
@@ -24,51 +24,70 @@ if 'temp_data' not in st.session_state:
     st.session_state.accel_x = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.accel_y = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.accel_z = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
+    st.session_state.power_data = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
 
-# --- MAQUETACIÓN DE LA WEB (Contenedores vacíos) ---
-# Fila de métricas grandes
+
+# ==============================================================================
+# --- MAQUETACIÓN DE LA WEB ---
+# ==============================================================================
+# SECCIÓN 1: ENTORNO Y DINÁMICA
+st.subheader("Entorno y Dinámica del Vehículo")
 col1, col2, col3, col4 = st.columns(4) # divide la pantalla en columnas verticales, en este caso 4.
 metrica_temp = col1.empty()
 metrica_x = col2.empty()
 metrica_y = col3.empty()
 metrica_z = col4.empty()
 
-st.divider()
-
-# Fila de gráficas
-col_graf_1, col_graf_2 = st.columns(2)  # divide la pantalla en columnas verticales, en este caso 2.
-
+col_graf_1, col_graf_2 = st.columns(2) # divide la pantalla en columnas verticales, en este caso 2.
 with col_graf_1:
-    st.subheader("🌡️ Evolución de Temperatura (ºC)")
+    #st.subheader("🌡️ Evolución de Temperatura (ºC)")
     grafica_temp = st.empty()
-
 with col_graf_2:
-    st.subheader("🚀 Fuerzas G (Acelerómetro)")
+    #st.subheader("🚀 Fuerzas G (Acelerómetro)")
     grafica_accel = st.empty()
 
+st.divider()
+
+# SECCIÓN 2: ENERGÍA (PAC1934)
+st.subheader("Generación Solar VIPV (PAC1934)")
+col_e1, col_e2, col_e3 = st.columns(3)
+metrica_v = col_e1.empty()
+metrica_i = col_e2.empty()
+metrica_p = col_e3.empty()
+
+grafica_potencia = st.empty()
+
+st.divider()
+
+
+
+# ==============================================================================
 # --- BUCLE PRINCIPAL CAN ---
+# ==============================================================================
 try:
     bus = can.interface.Bus(channel='can0', bustype='socketcan')
     
     # Este bucle infinito mantiene la web viva
     while True:
-        msg = bus.recv(0.1) # Timeout corto (0.1s) para que la web no se congele mientras espera nuevos datos
+        msg = bus.recv(0.05) # Timeout corto (0.05s) para que la web no se congele mientras espera nuevos datos
         
         if msg is not None:
             # 1. ACTUALIZAR TEMPERATURA
             if msg.arbitration_id == 0x100:
-                temp = bytes_to_float_escalado(msg.data[0], msg.data[1])
+                temp = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=100.0)
                 st.session_state.temp_data.append(temp)
                 
                 # Refrescar UI
                 metrica_temp.metric("Temperatura VIPV", f"{temp:.2f} °C")
                 grafica_temp.line_chart(list(st.session_state.temp_data), color="#ff4b4b")
+
+
                 
             # 2. ACTUALIZAR DINÁMICA
             elif msg.arbitration_id == 0x101:
-                ax = bytes_to_float_escalado(msg.data[0], msg.data[1])
-                ay = bytes_to_float_escalado(msg.data[2], msg.data[3])
-                az = bytes_to_float_escalado(msg.data[4], msg.data[5])
+                ax = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=100.0)
+                ay = bytes_to_float_escalado(msg.data[2], msg.data[3], escala=100.0)
+                az = bytes_to_float_escalado(msg.data[4], msg.data[5], escala=100.0)
                 
                 st.session_state.accel_x.append(ax)
                 st.session_state.accel_y.append(ay)
@@ -79,13 +98,34 @@ try:
                 metrica_y.metric("Eje Y", f"{ay:.2f} g")
                 metrica_z.metric("Eje Z", f"{az:.2f} g")
                 
-                # Juntamos los 3 ejes en una tabla (DataFrame) para que Streamlit dibuje 3 líneas juntas
+                # Junto los 3 ejes en una tabla (DataFrame) para que Streamlit dibuje 3 líneas juntas
                 df_accel = pd.DataFrame({
                     'Eje X': list(st.session_state.accel_x),
                     'Eje Y': list(st.session_state.accel_y),
                     'Eje Z': list(st.session_state.accel_z)
                 })
                 grafica_accel.line_chart(df_accel)
+
+
+
+            # 3. ACTUALIZAR ENERGÍA
+            elif msg.arbitration_id == 0x102:
+                # Voltaje viene escalado por 100 (usamos la función por defecto)
+                volts = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=100.0)
+                
+                # Corriente y Potencia vienen escaladas por 1000 (miliAmperios y miliVatios)
+                amps = bytes_to_float_escalado(msg.data[2], msg.data[3], escala=1000.0)
+                watts = bytes_to_float_escalado(msg.data[4], msg.data[5], escala=1000.0)
+            
+                # Guardar la potencia en la memoria para la gráfica
+                st.session_state.power_data.append(watts)
+                
+                # Refrescar la UI de Energía
+                metrica_v.metric("Voltaje del Panel", f"{volts:.2f} V")
+                metrica_i.metric("Corriente Generada", f"{amps:.3f} A")
+                metrica_p.metric("Potencia Total", f"{watts:.2f} W")
+                
+                grafica_potencia.line_chart(list(st.session_state.power_data), color="#00ff88")
 
 except Exception as e:
     st.error(f"❌ Error de conexión CAN: {e}")
