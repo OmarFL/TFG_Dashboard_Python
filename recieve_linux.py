@@ -10,12 +10,14 @@ telemetria_vipv = {
     "Accel_X": 0.0,
     "Accel_Y": 0.0,
     "Accel_Z": 0.0,
+    "Voltaje": 0.0,
+    "Corriente": 0.0,
+    "Potencia": 0.0,
+    "Irradiancia": 0.0,
     "Heartbeat_Entorno": 0,
     "Heartbeat_Dinamica": 0,
     "Heartbeat_Energia": 0,
-    "Voltaje": 0.0,
-    "Corriente": 0.0,
-    "Potencia": 0.0
+    "Heartbeat_Irradiancia": 0
 }
 
 
@@ -83,7 +85,20 @@ try:
                 telemetria_vipv["Heartbeat_Energia"] = msg.data[7]
 
                 print(f"[ENERGÍA] V: {volts:.2f}V | I: {amps:.3f}A | P: {watts:.2f}W | Seq: {msg.data[7]}")
-                pass 
+               
+
+
+            # --- PROCESAMIENTO TRAMA IRRADIANCIA (0x103) ---
+            elif msg.arbitration_id == 0x103:
+                # Desescalar dividiendo por 10
+                irr = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=10.0)
+
+                telemetria_vipv["Irradiancia"] = irr
+                telemetria_vipv["Heartbeat_Irradiancia"] = msg.data[7]
+
+                print(f"[ILUMINACIÓN] Irradiancia: {irr:.1f} W/m2 | Seq: {msg.data[7]}")
+                pass
+
 
 except KeyboardInterrupt:
     print("\nDetenido por el usuario. Cerrando conexión...")

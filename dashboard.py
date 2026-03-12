@@ -25,37 +25,47 @@ if 'temp_data' not in st.session_state:
     st.session_state.accel_y = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.accel_z = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.power_data = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
+    st.session_state.irr_data = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
 
 
 # ==============================================================================
 # --- MAQUETACIÓN DE LA WEB ---
 # ==============================================================================
-# SECCIÓN 1: ENTORNO Y DINÁMICA
-st.subheader("Entorno y Dinámica del Vehículo")
-col1, col2, col3, col4 = st.columns(4) # divide la pantalla en columnas verticales, en este caso 4.
-metrica_temp = col1.empty()
-metrica_x = col2.empty()
-metrica_y = col3.empty()
-metrica_z = col4.empty()
+# SECCIÓN 1: ENTORNO (Temperatura e Irradiancia)
+st.subheader("Entorno Solar y Térmico del Vehículo")
+col_m1, col_m2 = st.columns(2) # divide la pantalla en columnas verticales, en este caso 2
+metrica_temp = col_m1.empty()
+metrica_irr = col_m2.empty()
 
-col_graf_1, col_graf_2 = st.columns(2) # divide la pantalla en columnas verticales, en este caso 2.
-with col_graf_1:
+col_g1, col_g2 = st.columns(2) # divide la pantalla en columnas verticales, en este caso 2
+with col_g1:
     #st.subheader("🌡️ Evolución de Temperatura (ºC)")
     grafica_temp = st.empty()
-with col_graf_2:
-    #st.subheader("🚀 Fuerzas G (Acelerómetro)")
-    grafica_accel = st.empty()
+with col_g2:
+    #st.subheader(" Evolución de Irraciancia (W/m2)")
+    grafica_irr = st.empty()
 
 st.divider()
 
-# SECCIÓN 2: ENERGÍA (PAC1934)
-st.subheader("Generación Solar VIPV (PAC1934)")
-col_e1, col_e2, col_e3 = st.columns(3)
-metrica_v = col_e1.empty()
-metrica_i = col_e2.empty()
-metrica_p = col_e3.empty()
 
-grafica_potencia = st.empty()
+# SECCIÓN 2: COCHE Y ENERGÍA (Dinámica y Potencia)
+st.subheader("Dinámica y Generación Solar del VIPV")
+# 6 columnas para las métricas (3 para fuerzas G, 3 para energía)
+col_dx, col_dy, col_dz, col_ev, col_ei, col_ep = st.columns(6)
+metrica_x = col_dx.empty()
+metrica_y = col_dy.empty()
+metrica_z = col_dz.empty()
+metrica_v = col_ev.empty()
+metrica_i = col_ei.empty()
+metrica_p = col_ep.empty()
+
+col_g3, col_g4 = st.columns(2)
+with col_g3:
+    #st.subheader(" Evolución de la Dinámica")
+    grafica_accel = st.empty()
+with col_g4:
+    #st.subheader(" Evolución de la Potencia")
+    grafica_potencia = st.empty()
 
 st.divider()
 
@@ -120,12 +130,26 @@ try:
                 # Guardar la potencia en la memoria para la gráfica
                 st.session_state.power_data.append(watts)
                 
-                # Refrescar la UI de Energía
+                # Refrescar la UI
                 metrica_v.metric("Voltaje del Panel", f"{volts:.2f} V")
                 metrica_i.metric("Corriente Generada", f"{amps:.3f} A")
                 metrica_p.metric("Potencia Total", f"{watts:.2f} W")
                 
                 grafica_potencia.line_chart(list(st.session_state.power_data), color="#00ff88")
+
+
+            # 4. ACTUALIZAR IRRADIANCIA (0x103)
+            elif msg.arbitration_id == 0x103:
+                # Desescalar dividiendo por 10
+                irr = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=10.0)
+                
+                # Guardar la irradiancia en la memoria para la gráfica
+                st.session_state.irr_data.append(irr)
+                
+                # Refrescar UI 
+                metrica_irr.metric("Irradiancia Solar", f"{irr:.1f} W/m²")
+                grafica_irr.line_chart(list(st.session_state.irr_data), color="#ffa500")
+                
 
 except Exception as e:
     st.error(f"❌ Error de conexión CAN: {e}")
