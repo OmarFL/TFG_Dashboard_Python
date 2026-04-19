@@ -1,7 +1,7 @@
 import can # type: ignore
 
 print("Iniciando motor de telemetría CAN en Linux a 500Kbps...")
-print("Esperando tramas VIPV (ID 0x123). Pulsa Ctrl+C para salir.\n")
+print("Esperando tramas VIPV (0x100-0x103) y respuestas OBD (0x7E8). Ctrl+C para salir.\n")
 
 
 # Estructura de datos para guardar la telemetría
@@ -14,6 +14,7 @@ telemetria_vipv = {
     "Corriente": 0.0,
     "Potencia": 0.0,
     "Irradiancia": 0.0,
+    "Velocidad": 0.0,
     "Heartbeat_Entorno": 0,
     "Heartbeat_Dinamica": 0,
     "Heartbeat_Energia": 0,
@@ -97,7 +98,15 @@ try:
                 telemetria_vipv["Heartbeat_Irradiancia"] = msg.data[7]
 
                 print(f"[ILUMINACIÓN] Irradiancia: {irr:.1f} W/m2 | Seq: {msg.data[7]}")
-                pass
+
+            # --- PROCESAMIENTO TRAMA OBD VELOCIDAD (0x7E8) ---
+            elif msg.arbitration_id == 0x7E8:
+                # Comprobamos que el PID es el de Velocidad (0x0D)
+                if msg.data[2] == 0x0D:
+                    vel = int(msg.data[3]) # Extraemos la velocidad directa
+                    telemetria_vipv["Velocidad"] = vel
+                    
+                    print(f"[OBD COCHE] Velocidad Actual: {vel} km/h")
 
 
 except KeyboardInterrupt:
