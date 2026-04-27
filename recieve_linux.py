@@ -1,7 +1,9 @@
 import can # type: ignore
+import csv
+from datetime import datetime
 
 print("Iniciando motor de telemetría CAN en Linux a 500Kbps...")
-print("Esperando tramas VIPV (0x100-0x103) y respuestas OBD (0x7E8). Ctrl+C para salir.\n")
+print("Esperando tramas VIPV (0x100-0x103) y respuestas OBD\n")
 
 
 # Estructura de datos para guardar la telemetría
@@ -35,6 +37,19 @@ def bytes_to_float_escalado(byte_alto, byte_bajo, escala=100.0):
     # Deshacer el escalado realizado al empaquetar los datos, antes del envío
     return entero_16bits / escala
 # -------------------------------------------------------------
+
+# --- INICIALIZACIÓN DEL ARCHIVO CSV ---
+fecha_hora = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+nombre_archivo = f"telemetria_ruta_{fecha_hora}.csv"
+archivo_csv = open(nombre_archivo, mode='w', newline='')
+writer = csv.writer(archivo_csv)
+
+# Cabecera
+writer.writerow([
+    'Timestamp', 'Temp_C', 'Accel_X', 'Accel_Y', 'Accel_Z', 
+    'Voltaje_V', 'Corriente_A', 'Potencia_W', 'Irradiancia_W_m2', 'Velocidad_kmh', 'RPM'
+])
+print(f"-> Grabando datos de la prueba en: {nombre_archivo}\n")
 
 
 try:
@@ -101,12 +116,38 @@ try:
 
             # --- PROCESAMIENTO TRAMA OBD VELOCIDAD (0x7E8) ---
             elif msg.arbitration_id == 0x7E8:
-                # Comprobamos que el PID es el de Velocidad (0x0D)
+                # PID 0x0D: Velocidad
                 if msg.data[2] == 0x0D:
                     vel = int(msg.data[3]) # Extraemos la velocidad directa
                     telemetria_vipv["Velocidad"] = vel
                     
                     print(f"[OBD COCHE] Velocidad Actual: {vel} km/h")
+
+                # PID 0x0C: RPMs
+                if msg.data[2] == 0x0C:
+                    rpm = (msg.data[3] * 256 + msg.data[4]) / 4.0
+                    telemetria_vipv["RPM"] = rpm
+                    
+                    print(f"[OBD COCHE] RPM: {int(rpm)}")
+
+
+            # --- GUARDADO EN CSV (Se ejecuta en cada recepción) ---
+            tiempo_actual = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            writer.writerow([
+                tiempo_actual,
+                telemetria_vipv["Temperatura_C"],
+                telemetria_vipv["Accel_X"],
+                telemetria_vipv["Accel_Y"],
+                telemetria_vipv["Accel_Z"],
+                telemetria_vipv["Voltaje"],
+                telemetria_vipv["Corriente"],
+                telemetria_vipv["Potencia"],
+                telemetria_vipv["Irradiancia"],
+                telemetria_vipv["Velocidad"],
+                telemetria_vipv["RPM"]
+            ])
+            archivo_csv.flush() # Para guardado inmediato
+
 
 
 except KeyboardInterrupt:
@@ -117,3 +158,6 @@ finally:
     if 'bus' in locals():
         bus.shutdown()
         print("Bus CAN liberado correctamente.")
+    archivo_csv.close()
+
+

@@ -27,6 +27,7 @@ if 'temp_data' not in st.session_state:
     st.session_state.power_data = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.irr_data = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.speed_data = deque([0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
+    st.session_state.rpm_data = deque([0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
 
 
 # ==============================================================================
@@ -51,8 +52,8 @@ st.divider()
 
 # SECCIÓN 2: COCHE Y ENERGÍA (Dinámica y Potencia)
 st.subheader("Dinámica, Velocidad y Generación Solar del VIPV")
-# 6 columnas para las métricas (3 para fuerzas G, 3 para energía)
-col_dx, col_dy, col_dz, col_ev, col_ei, col_ep, col_vel = st.columns(7)
+# 8 columnas para las métricas (3 para fuerzas G, 3 para energía, 2 para parámetros OBD)
+col_dx, col_dy, col_dz, col_vel, col_rpm, col_ev, col_ei, col_ep = st.columns(8)
 metrica_x = col_dx.empty()
 metrica_y = col_dy.empty()
 metrica_z = col_dz.empty()
@@ -60,15 +61,19 @@ metrica_v = col_ev.empty()
 metrica_i = col_ei.empty()
 metrica_p = col_ep.empty()
 metrica_vel_obd = col_vel.empty()
+metrica_rpm_obd = col_rpm.empty()
 
-col_g3, col_g4, col_g5 = st.columns(3)
+col_g3, col_g4, col_g5, col_g6 = st.columns(4)
 with col_g3:
     #st.subheader(" Evolución de la Dinámica")
     grafica_accel = st.empty()
 with col_g4:
-    #st.subheader(" Evolución de la Velocidad")
+     #st.subheader(" Evolución de la Velocidad")
     grafica_vel = st.empty()
 with col_g5:
+    #st.subheader(" Evolución de las RPMs")
+    grafica_rpm = st.empty() 
+with col_g6:
     #st.subheader(" Evolución de la Potencia")
     grafica_potencia = st.empty()
 
@@ -165,7 +170,6 @@ try:
                 if msg.data[2] == 0x0D: 
                     
                     # La velocidad real está alojada en el byte 3
-                    
                     velocidad = int(msg.data[3])
                     
                     # Guardar la velocidad en la memoria para la gráfica
@@ -174,7 +178,20 @@ try:
                     # Refrescar UI
                     metrica_vel_obd.metric("Velocidad Coche", f"{velocidad} km/h")
                     grafica_vel.line_chart(list(st.session_state.speed_data), color="#00c0f9")
-                
+
+
+                # Comprobación del byte 2 para confirmar que es el PID de RPM (0x0C)
+                if msg.data[2] == 0x0C: 
+                    
+                    # Cálculo de las RPMs reales a partir de los bytes 3 y 4
+                    rpm = (msg.data[3] * 256 + msg.data[4]) / 4.0
+                    
+                    # Guardar las rpms en la memoria para la gráfica
+                    st.session_state.rpm_data.append(rpm)
+                    
+                    # Refrescar UI
+                    metrica_rpm_obd.metric("Revoluciones", f"{int(rpm)} RPM")
+                    grafica_rpm.line_chart(list(st.session_state.rpm_data), color="#a200ff") 
                 
 
 except Exception as e:
