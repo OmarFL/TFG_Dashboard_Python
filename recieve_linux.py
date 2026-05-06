@@ -17,6 +17,7 @@ telemetria_vipv = {
     "Potencia": 0.0,
     "Irradiancia": 0.0,
     "Velocidad": 0.0,
+    "RPM": 0.0,
     "Heartbeat_Entorno": 0,
     "Heartbeat_Dinamica": 0,
     "Heartbeat_Energia": 0,
@@ -49,6 +50,7 @@ writer.writerow([
     'Timestamp', 'Temp_C', 'Accel_X', 'Accel_Y', 'Accel_Z', 
     'Voltaje_V', 'Corriente_A', 'Potencia_W', 'Irradiancia_W_m2', 'Velocidad_kmh', 'RPM'
 ])
+archivo_csv.flush()  
 print(f"-> Grabando datos de la prueba en: {nombre_archivo}\n")
 
 
