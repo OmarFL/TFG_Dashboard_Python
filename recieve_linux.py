@@ -57,8 +57,11 @@ print(f"-> Grabando datos de la prueba en: {nombre_archivo}\n")
 try:
     bus = can.interface.Bus(channel='can0', bustype='socketcan')
     
+    # --- TEMPORIZADOR PARA EL CSV ---
+    ultimo_guardado = datetime.now()
+
     while True:
-        msg = bus.recv(1.0) 
+        msg = bus.recv(0.1) #Timeout de 0.1s para comprobación continua de los datos
         
         if msg is not None:
             
@@ -133,10 +136,18 @@ try:
                     print(f"[OBD COCHE] RPM: {int(rpm)}")
 
 
-            # --- GUARDADO EN CSV (Se ejecuta en cada recepción) ---
-            tiempo_actual = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        # --- GUARDADO EN CSV (Se ejecuta en cada recepción) ---
+        # --- LÓGICA DE GUARDADO ASÍNCRONO (1 Hz) ---
+        ahora = datetime.now()
+        diferencia = (ahora - ultimo_guardado).total_seconds()
+        
+         # Si ha pasado 1 seg o más desde la última vez que se guardó en CSV:
+        if diferencia >= 1.0:
+            tiempo_actual_str = ahora.strftime("%H:%M:%S")
+
+            #tiempo_actual = datetime.now().strftime("%H:%M:%S.%f")[:-3]
             writer.writerow([
-                tiempo_actual,
+                tiempo_actual_str,
                 telemetria_vipv["Temperatura_C"],
                 telemetria_vipv["Accel_X"],
                 telemetria_vipv["Accel_Y"],
@@ -149,6 +160,9 @@ try:
                 telemetria_vipv["RPM"]
             ])
             archivo_csv.flush() # Para guardado inmediato
+
+            # Reiniciar para el próximo segundo
+            ultimo_guardado = ahora
 
 
 
