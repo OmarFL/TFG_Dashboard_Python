@@ -15,6 +15,7 @@ telemetria_vipv = {
     "Voltaje": 0.0,
     "Corriente": 0.0,
     "Potencia": 0.0,
+    "Potencia_Teorica": 0.0,
     "Irradiancia": 0.0,
     "Velocidad": 0.0,
     "RPM": 0.0,
@@ -39,17 +40,34 @@ def bytes_to_float_escalado(byte_alto, byte_bajo, escala=100.0):
     return entero_16bits / escala
 # -------------------------------------------------------------
 
+
+# --- ARRAYS DEL PANEL Y CÁLCULO DE MÁXIMOS TEÓRICOS ---
+v_vector = [0.548, 1.097, 1.645, 2.194, 2.742, 3.291, 3.839, 4.388, 4.936, 5.485, 6.033, 6.582, 7.13, 7.679, 8.228, 8.776, 9.324, 9.873, 10.422, 10.97, 11.519, 12.067, 12.615, 13.164, 13.712, 14.261, 14.809, 15.358, 15.907, 16.455, 17.004, 17.552, 18.101, 18.649, 19.198, 19.746, 20.295, 20.844, 21.392, 21.941, 22.489, 23.037, 23.587, 24.134, 24.683, 25.231, 25.78, 26.329, 26.877]
+i_sol = [0.96, 0.95, 0.94, 0.93, 0.92, 0.91, 0.9, 0.89, 0.88, 0.87, 0.86, 0.85, 0.84, 0.83, 0.83, 0.82, 0.81, 0.8, 0.8, 0.79, 0.78, 0.77, 0.76, 0.76, 0.75, 0.74, 0.73, 0.72, 0.72, 0.71, 0.7, 0.69, 0.68, 0.68, 0.67, 0.66, 0.65, 0.64, 0.63, 0.63, 0.61, 0.6, 0.58, 0.56, 0.54, 0.51, 0.45, 0.34, 0.15, -0.14]
+i_sombra = [0.87, 0.85, 0.83, 0.82, 0.8, 0.79, 0.77, 0.75, 0.74, 0.73, 0.71, 0.69, 0.68, 0.67, 0.66, 0.64, 0.63, 0.62, 0.61, 0.6, 0.59, 0.58, 0.57, 0.56, 0.55, 0.54, 0.53, 0.52, 0.51, 0.5, 0.49, 0.47, 0.46, 0.45, 0.43, 0.42, 0.4, 0.39, 0.37, 0.36, 0.34, 0.32, 0.3, 0.28, 0.26, 0.23, 0.19, 0.13, 0.02, -0.24]
+
+P_MAX_SOL = max([v * i for v, i in zip(v_vector, i_sol)])
+P_MAX_SOMBRA = max([v * i for v, i in zip(v_vector, i_sombra)])
+# -------------------------------------------------------------
+
+
 # --- INICIALIZACIÓN DEL ARCHIVO CSV ---
 fecha_hora = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 nombre_archivo = f"telemetria_ruta_{fecha_hora}.csv"
 archivo_csv = open(nombre_archivo, mode='w', newline='')
 writer = csv.writer(archivo_csv)
 
+
 # Cabecera
 writer.writerow([
     'Timestamp', 'Temp_C', 'Accel_X', 'Accel_Y', 'Accel_Z', 
-    'Voltaje_V', 'Corriente_A', 'Potencia_W', 'Irradiancia_W_m2', 'Velocidad_kmh', 'RPM'
+    'Voltaje_MPPT_V', 'Potencia_Extraida_W', 'Potencia_Teorica_W', 'Irradiancia_W_m2', 'Velocidad_kmh', 'RPM'
 ])
+#writer.writerow([
+#    'Timestamp', 'Temp_C', 'Accel_X', 'Accel_Y', 'Accel_Z', 
+#    'Voltaje_V', 'Corriente_A', 'Potencia_W', 'Irradiancia_W_m2', 'Velocidad_kmh', 'RPM'
+#])
+
 archivo_csv.flush()  
 print(f"-> Grabando datos de la prueba en: {nombre_archivo}\n")
 
@@ -92,21 +110,44 @@ try:
                 print(f"[DINÁMICA] X:{ax:.2f}g | Y:{ay:.2f}g | Z:{az:.2f}g | Seq: {msg.data[7]}")
 
 
-            # --- PROCESAMIENTO TRAMA ENERGÍA (0x102) ---
+
+            # --- PROCESAMIENTO TRAMA ENERGÍA MPPT (0x102) ---
             elif msg.arbitration_id == 0x102:
-                # Voltaje viene escalado por 100 (usamos la función por defecto)
+                # Voltaje Óptimo MPPT
                 volts = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=100.0)
-                # Corriente y Potencia vienen escaladas por 1000 (miliAmperios y miliVatios)
-                amps = bytes_to_float_escalado(msg.data[2], msg.data[3], escala=1000.0)
+                # Potencia Extraída Simulada (Bytes 4 y 5)
                 watts = bytes_to_float_escalado(msg.data[4], msg.data[5], escala=1000.0)
                 
+                # Cálculo de la Potencia Máxima Teórica basada en la última medida de irradiancia
+                if telemetria_vipv["Irradiancia"] > 150.0:
+                    p_max = P_MAX_SOL
+                else:
+                    p_max = P_MAX_SOMBRA
+
                 telemetria_vipv["Voltaje"] = volts
-                telemetria_vipv["Corriente"] = amps
                 telemetria_vipv["Potencia"] = watts
+                telemetria_vipv["Potencia_Teorica"] = p_max
                 telemetria_vipv["Heartbeat_Energia"] = msg.data[7]
 
-                print(f"[ENERGÍA] V: {volts:.2f}V | I: {amps:.3f}A | P: {watts:.2f}W | Seq: {msg.data[7]}")
-               
+                print(f"[MPPT] V_opt: {volts:.2f}V | P_ext: {watts:.2f}W | P_ideal: {p_max:.2f}W | Seq: {msg.data[7]}")
+
+
+
+            # --- PROCESAMIENTO TRAMA ENERGÍA (0x102) ---
+            # elif msg.arbitration_id == 0x102:
+            #     # Voltaje viene escalado por 100 (usamos la función por defecto)
+            #     volts = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=100.0)
+            #     # Corriente y Potencia vienen escaladas por 1000 (miliAmperios y miliVatios)
+            #     amps = bytes_to_float_escalado(msg.data[2], msg.data[3], escala=1000.0)
+            #     watts = bytes_to_float_escalado(msg.data[4], msg.data[5], escala=1000.0)
+            #     
+            #     telemetria_vipv["Voltaje"] = volts
+            #     telemetria_vipv["Corriente"] = amps
+            #     telemetria_vipv["Potencia"] = watts
+            #     telemetria_vipv["Heartbeat_Energia"] = msg.data[7]
+            # 
+            #     print(f"[ENERGÍA] V: {volts:.2f}V | I: {amps:.3f}A | P: {watts:.2f}W | Seq: {msg.data[7]}")
+            
 
 
             # --- PROCESAMIENTO TRAMA IRRADIANCIA (0x103) ---
@@ -155,6 +196,7 @@ try:
                 telemetria_vipv["Voltaje"],
                 telemetria_vipv["Corriente"],
                 telemetria_vipv["Potencia"],
+                telemetria_vipv["Potencia_Teorica"],
                 telemetria_vipv["Irradiancia"],
                 telemetria_vipv["Velocidad"],
                 telemetria_vipv["RPM"]
@@ -175,5 +217,3 @@ finally:
         bus.shutdown()
         print("Bus CAN liberado correctamente.")
     archivo_csv.close()
-
-

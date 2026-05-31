@@ -15,6 +15,16 @@ def bytes_to_float_escalado(byte_alto, byte_bajo, escala=100.0):
         entero_16bits -= 65536
     return entero_16bits / escala
 
+
+# --- ARRAYS DEL PANEL Y CÁLCULO DE MÁXIMOS TEÓRICOS ---
+v_vector = [0.548, 1.097, 1.645, 2.194, 2.742, 3.291, 3.839, 4.388, 4.936, 5.485, 6.033, 6.582, 7.13, 7.679, 8.228, 8.776, 9.324, 9.873, 10.422, 10.97, 11.519, 12.067, 12.615, 13.164, 13.712, 14.261, 14.809, 15.358, 15.907, 16.455, 17.004, 17.552, 18.101, 18.649, 19.198, 19.746, 20.295, 20.844, 21.392, 21.941, 22.489, 23.037, 23.587, 24.134, 24.683, 25.231, 25.78, 26.329, 26.877]
+i_sol = [0.96, 0.95, 0.94, 0.93, 0.92, 0.91, 0.9, 0.89, 0.88, 0.87, 0.86, 0.85, 0.84, 0.83, 0.83, 0.82, 0.81, 0.8, 0.8, 0.79, 0.78, 0.77, 0.76, 0.76, 0.75, 0.74, 0.73, 0.72, 0.72, 0.71, 0.7, 0.69, 0.68, 0.68, 0.67, 0.66, 0.65, 0.64, 0.63, 0.63, 0.61, 0.6, 0.58, 0.56, 0.54, 0.51, 0.45, 0.34, 0.15, -0.14]
+i_sombra = [0.87, 0.85, 0.83, 0.82, 0.8, 0.79, 0.77, 0.75, 0.74, 0.73, 0.71, 0.69, 0.68, 0.67, 0.66, 0.64, 0.63, 0.62, 0.61, 0.6, 0.59, 0.58, 0.57, 0.56, 0.55, 0.54, 0.53, 0.52, 0.51, 0.5, 0.49, 0.47, 0.46, 0.45, 0.43, 0.42, 0.4, 0.39, 0.37, 0.36, 0.34, 0.32, 0.3, 0.28, 0.26, 0.23, 0.19, 0.13, 0.02, -0.24]
+
+P_MAX_SOL = max([v * i for v, i in zip(v_vector, i_sol)])
+P_MAX_SOMBRA = max([v * i for v, i in zip(v_vector, i_sombra)])
+
+
 # --- INICIALIZACIÓN DE MEMORIA (Para que la gráfica avance sola) ---
 MAX_PUNTOS = 50 # Los datos se guardan durante 50s, y a partir del seg 51, comienzan a reemplazarse
 
@@ -25,6 +35,7 @@ if 'temp_data' not in st.session_state:
     st.session_state.accel_y = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.accel_z = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.power_data = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
+    st.session_state.power_max_data = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.irr_data = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.speed_data = deque([0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.rpm_data = deque([0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
@@ -127,26 +138,56 @@ try:
                 grafica_accel.line_chart(df_accel)
 
 
-
+        
             # 3. ACTUALIZAR ENERGÍA
+            #elif msg.arbitration_id == 0x102:
+            #    # Voltaje viene escalado por 100 (usamos la función por defecto)
+            #    volts = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=100.0)
+            #    
+            #    # Corriente y Potencia vienen escaladas por 1000 (miliAmperios y miliVatios)
+            #    amps = bytes_to_float_escalado(msg.data[2], msg.data[3], escala=1000.0)
+            #    watts = bytes_to_float_escalado(msg.data[4], msg.data[5], escala=1000.0)
+            # 
+            #     # Guardar la potencia en la memoria para la gráfica
+            #     st.session_state.power_data.append(watts)
+            #    
+            #     # Refrescar la UI
+            #     metrica_v.metric("Voltaje del Panel", f"{volts:.2f} V")
+            #     metrica_i.metric("Corriente Generada", f"{amps:.3f} A")
+            #     metrica_p.metric("Potencia Total", f"{watts:.2f} W")
+            #     
+            #     grafica_potencia.line_chart(list(st.session_state.power_data), color="#00ff88")
+            
+
+            # 3. ACTUALIZAR ENERGÍA MPPT
             elif msg.arbitration_id == 0x102:
-                # Voltaje viene escalado por 100 (usamos la función por defecto)
                 volts = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=100.0)
-                
-                # Corriente y Potencia vienen escaladas por 1000 (miliAmperios y miliVatios)
-                amps = bytes_to_float_escalado(msg.data[2], msg.data[3], escala=1000.0)
                 watts = bytes_to_float_escalado(msg.data[4], msg.data[5], escala=1000.0)
             
-                # Guardar la potencia en la memoria para la gráfica
+                # Calcular potencia máxima teórica en función de la última luz leída
+                ultima_luz = st.session_state.irr_data[-1]
+                if ultima_luz > 150.0:
+                    p_max = P_MAX_SOL
+                else:
+                    p_max = P_MAX_SOMBRA
+
+                # Guardar ambas potencias en memoria
                 st.session_state.power_data.append(watts)
+                st.session_state.power_max_data.append(p_max)
                 
                 # Refrescar la UI
-                metrica_v.metric("Voltaje del Panel", f"{volts:.2f} V")
-                metrica_i.metric("Corriente Generada", f"{amps:.3f} A")
-                metrica_p.metric("Potencia Total", f"{watts:.2f} W")
+                metrica_v.metric("Voltaje MPPT", f"{volts:.2f} V")
+                metrica_i.metric("Potencia Ideal", f"{p_max:.2f} W") # Reutilizamos el hueco de Corriente
+                metrica_p.metric("Potencia MPPT", f"{watts:.2f} W")
                 
-                grafica_potencia.line_chart(list(st.session_state.power_data), color="#00ff88")
-
+                # Crear DataFrame para dibujar dos líneas juntas en la misma gráfica
+                df_power = pd.DataFrame({
+                    'Potencia MPPT (Real)': list(st.session_state.power_data),
+                    'Potencia Máx (Ideal)': list(st.session_state.power_max_data)
+                })
+                
+                # Dibujar con colores: Verde para lo real, Gris suave para el objetivo ideal
+                grafica_potencia.line_chart(df_power, color=["#00ff88", "#aaaaaa"])
 
 
             # 4. ACTUALIZAR IRRADIANCIA (0x103)
