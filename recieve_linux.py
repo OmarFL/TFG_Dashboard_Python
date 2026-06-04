@@ -60,8 +60,8 @@ writer = csv.writer(archivo_csv)
 
 # Cabecera
 writer.writerow([
-    'Timestamp', 'Temp_C', 'Accel_X', 'Accel_Y', 'Accel_Z', 
-    'Voltaje_MPPT_V', 'Potencia_Extraida_W', 'Potencia_Teorica_W', 'Irradiancia_W_m2', 'Velocidad_kmh', 'RPM'
+    'Timestamp', 'Temperatura [ºC]', 'Accel_X [g]', 'Accel_Y [g]', 'Accel_Z [g]', 
+    'Voltaje_MPPT [V]', 'Potencia_Extraida [W]', 'Potencia_Teorica [W]', 'Irradiancia [W/m^2]', 'Velocidad [km/h]'
 ])
 #writer.writerow([
 #    'Timestamp', 'Temp_C', 'Accel_X', 'Accel_Y', 'Accel_Z', 
@@ -185,21 +185,46 @@ try:
          # Si ha pasado 1 seg o más desde la última vez que se guardó en CSV:
         if diferencia >= 1.0:
             tiempo_actual_str = ahora.strftime("%H:%M:%S")
-
             #tiempo_actual = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+
+            # Limitar los números a 2 decimales y convertir a cadena para ordenar el Excel
+            # NOTA: Excel usa comas ',' para los decimales, por ello usar replace('.', ',')
+            p_extraida_formateada = f"{telemetria_vipv['Potencia']:.2f}".replace('.', ',')
+            p_teorica_formateada = f"{telemetria_vipv['Potencia_Teorica']:.2f}".replace('.', ',')
+            v_mppt_formateado = f"{telemetria_vipv['Voltaje']:.2f}".replace('.', ',')
+            irr_formateada = f"{telemetria_vipv['Irradiancia']:.1f}".replace('.', ',')
+            temp_formateada = f"{telemetria_vipv['Temperatura_C']:.2f}".replace('.', ',')
+            ax_formateada = f"{telemetria_vipv['Accel_X']:.2f}".replace('.', ',')
+            ay_formateada = f"{telemetria_vipv['Accel_Y']:.2f}".replace('.', ',')
+            az_formateada = f"{telemetria_vipv['Accel_Z']:.2f}".replace('.', ',')
+
+            #writer.writerow([
+            #    tiempo_actual_str,
+            #    telemetria_vipv["Temperatura_C"],
+            #    telemetria_vipv["Accel_X"],
+            #    telemetria_vipv["Accel_Y"],
+            #    telemetria_vipv["Accel_Z"],
+            #    telemetria_vipv["Voltaje"],
+            #    telemetria_vipv["Corriente"],
+            #    telemetria_vipv["Potencia"],
+            #    telemetria_vipv["Potencia_Teorica"],
+            #    telemetria_vipv["Irradiancia"],
+            #    telemetria_vipv["Velocidad"],
+            #    telemetria_vipv["RPM"]
+            #])
+
             writer.writerow([
                 tiempo_actual_str,
-                telemetria_vipv["Temperatura_C"],
-                telemetria_vipv["Accel_X"],
-                telemetria_vipv["Accel_Y"],
-                telemetria_vipv["Accel_Z"],
-                telemetria_vipv["Voltaje"],
-                telemetria_vipv["Corriente"],
-                telemetria_vipv["Potencia"],
-                telemetria_vipv["Potencia_Teorica"],
-                telemetria_vipv["Irradiancia"],
-                telemetria_vipv["Velocidad"],
-                telemetria_vipv["RPM"]
+                temp_formateada,
+                ax_formateada,
+                ay_formateada,
+                az_formateada,
+                v_mppt_formateado,
+                p_extraida_formateada,      
+                p_teorica_formateada,       
+                irr_formateada,
+                telemetria_vipv["Velocidad"]
+                # RPM 
             ])
             archivo_csv.flush() # Para guardado inmediato
 
@@ -217,3 +242,5 @@ finally:
         bus.shutdown()
         print("Bus CAN liberado correctamente.")
     archivo_csv.close()
+
+
