@@ -2,6 +2,7 @@ import streamlit as st # type: ignore
 import pandas as pd # type: ignore
 import can
 from collections import deque
+import time
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="VIPV Telemetry", page_icon="🏎️", layout="wide")
@@ -44,51 +45,55 @@ if 'temp_data' not in st.session_state:
 # ==============================================================================
 # --- MAQUETACIÓN DE LA WEB ---
 # ==============================================================================
-# SECCIÓN 1: ENTORNO (Temperatura e Irradiancia)
-st.subheader("Entorno Solar y Térmico del Vehículo")
-col_m1, col_m2 = st.columns(2) # divide la pantalla en columnas verticales, en este caso 2
+st.subheader("Datos en Tiempo Real")
+col_m1, col_m2, col_m3, col_m4, col_m5, col_m6, col_m7, col_m8, col_m9 = st.columns(9)
 metrica_temp = col_m1.empty()
 metrica_irr = col_m2.empty()
+metrica_v = col_m3.empty()
+metrica_pot_i = col_m4.empty() # Potencia Ideal
+metrica_pot_mppt = col_m5.empty() # Potencia MPPT
+metrica_vel_obd = col_m6.empty()
+metrica_x = col_m7.empty()
+metrica_y = col_m8.empty()
+metrica_z = col_m9.empty() 
 
+st.divider()
+
+
+
+# SECCIÓN 1: ENTORNO (Temperatura y Velocidad)
+st.subheader("Entorno Térmico del Vehículo y Cinemática")
 col_g1, col_g2 = st.columns(2) # divide la pantalla en columnas verticales, en este caso 2
 with col_g1:
-    #st.subheader("🌡️ Evolución de Temperatura (ºC)")
+    #st.subheader("Evolución de Temperatura (ºC)")
     grafica_temp = st.empty()
 with col_g2:
-    #st.subheader(" Evolución de Irraciancia (W/m2)")
+    #st.subheader("Evolución de Velocidad (km/h)")
+    grafica_vel = st.empty()
+
+st.divider()
+
+
+
+# SECCIÓN 2: SEGUIMIENTO SOLAR (Irradiancia y Algoritmo MPPT)
+st.subheader("Rendimiento VIPV: Seguimiento MPPT vs Irradiancia")
+
+col_g3, col_g4 = st.columns([3, 2]) # MPPT ocupa un poco más de espacio que la irradiancia
+
+with col_g3:
+    #st.subheader(" Evolución de la Potencia deseada / teórica")
+    grafica_potencia = st.empty()
+with col_g4:
+     #st.subheader(" Evolución de la Irradiancia")
     grafica_irr = st.empty()
 
 st.divider()
 
 
-# SECCIÓN 2: COCHE Y ENERGÍA (Dinámica y Potencia)
-st.subheader("Dinámica, Velocidad y Generación Solar del VIPV")
-# 8 columnas para las métricas (3 para fuerzas G, 3 para energía, 2 para parámetros OBD)
-col_dx, col_dy, col_dz, col_vel, col_rpm, col_ev, col_ei, col_ep = st.columns(8)
-metrica_x = col_dx.empty()
-metrica_y = col_dy.empty()
-metrica_z = col_dz.empty()
-metrica_v = col_ev.empty()
-metrica_i = col_ei.empty()
-metrica_p = col_ep.empty()
-metrica_vel_obd = col_vel.empty()
-metrica_rpm_obd = col_rpm.empty()
 
-col_g3, col_g4, col_g5, col_g6 = st.columns(4)
-with col_g3:
-    #st.subheader(" Evolución de la Dinámica")
-    grafica_accel = st.empty()
-with col_g4:
-     #st.subheader(" Evolución de la Velocidad")
-    grafica_vel = st.empty()
-with col_g5:
-    #st.subheader(" Evolución de las RPMs")
-    grafica_rpm = st.empty() 
-with col_g6:
-    #st.subheader(" Evolución de la Potencia")
-    grafica_potencia = st.empty()
-
-st.divider()
+# SECCIÓN 3: Dinámica Auxiliar (Acelerómetro y revoluciones)
+st.subheader("Acelerómetro e Inercia")
+grafica_accel = st.empty()
 
 
 
@@ -98,142 +103,91 @@ st.divider()
 try:
     bus = can.interface.Bus(channel='can0', bustype='socketcan')
     
-    # Este bucle infinito mantiene la web viva
+    ultimo_refresco = time.time()
+    
+    # Variables de estado temporal
+    temp=0.0; ax=0.0; ay=0.0; az=0.0; volts=0.0; watts=0.0; p_max=0.0; irr=0.0; velocidad=0; rpm=0
+
     while True:
-        msg = bus.recv(0.05) # Timeout corto (0.05s) para que la web no se congele mientras espera nuevos datos
-        
-        if msg is not None:
-            # 1. ACTUALIZAR TEMPERATURA
+        # 1. BUCLE INTERNO: VACÍA EL BUFFER CAN A LA MÁXIMA VELOCIDAD
+        while True:
+            msg = bus.recv(0.0) # 0.0 NO bloquea. Si no hay mensajes, sale del bucle interno
+            
+            if msg is None:
+                break # Fin de los mensajes atrasados
+            
+            # --- PROCESAMIENTO SILENCIOSO DE TRAMAS ---
             if msg.arbitration_id == 0x100:
                 temp = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=100.0)
                 st.session_state.temp_data.append(temp)
                 
-                # Refrescar UI
-                metrica_temp.metric("Temperatura VIPV", f"{temp:.2f} °C")
-                grafica_temp.line_chart(list(st.session_state.temp_data), color="#ff4b4b")
-
-
-                
-            # 2. ACTUALIZAR DINÁMICA
             elif msg.arbitration_id == 0x101:
                 ax = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=100.0)
                 ay = bytes_to_float_escalado(msg.data[2], msg.data[3], escala=100.0)
                 az = bytes_to_float_escalado(msg.data[4], msg.data[5], escala=100.0)
-                
                 st.session_state.accel_x.append(ax)
                 st.session_state.accel_y.append(ay)
                 st.session_state.accel_z.append(az)
-                
-                # Refrescar UI
-                metrica_x.metric("Eje X", f"{ax:.2f} g")
-                metrica_y.metric("Eje Y", f"{ay:.2f} g")
-                metrica_z.metric("Eje Z", f"{az:.2f} g")
-                
-                # Junto los 3 ejes en una tabla (DataFrame) para que Streamlit dibuje 3 líneas juntas
-                df_accel = pd.DataFrame({
-                    'Eje X': list(st.session_state.accel_x),
-                    'Eje Y': list(st.session_state.accel_y),
-                    'Eje Z': list(st.session_state.accel_z)
-                })
-                grafica_accel.line_chart(df_accel)
 
-
-        
-            # 3. ACTUALIZAR ENERGÍA
-            #elif msg.arbitration_id == 0x102:
-            #    # Voltaje viene escalado por 100 (usamos la función por defecto)
-            #    volts = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=100.0)
-            #    
-            #    # Corriente y Potencia vienen escaladas por 1000 (miliAmperios y miliVatios)
-            #    amps = bytes_to_float_escalado(msg.data[2], msg.data[3], escala=1000.0)
-            #    watts = bytes_to_float_escalado(msg.data[4], msg.data[5], escala=1000.0)
-            # 
-            #     # Guardar la potencia en la memoria para la gráfica
-            #     st.session_state.power_data.append(watts)
-            #    
-            #     # Refrescar la UI
-            #     metrica_v.metric("Voltaje del Panel", f"{volts:.2f} V")
-            #     metrica_i.metric("Corriente Generada", f"{amps:.3f} A")
-            #     metrica_p.metric("Potencia Total", f"{watts:.2f} W")
-            #     
-            #     grafica_potencia.line_chart(list(st.session_state.power_data), color="#00ff88")
-            
-
-            # 3. ACTUALIZAR ENERGÍA MPPT
             elif msg.arbitration_id == 0x102:
                 volts = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=100.0)
                 watts = bytes_to_float_escalado(msg.data[4], msg.data[5], escala=1000.0)
             
-                # Calcular potencia máxima teórica en función de la última luz leída
-                ultima_luz = st.session_state.irr_data[-1]
+                # UMBRAL FIJADO EN 150.0 W/m2
+                ultima_luz = st.session_state.irr_data[-1] if len(st.session_state.irr_data) > 0 else 0
                 if ultima_luz > 150.0:
                     p_max = P_MAX_SOL
                 else:
                     p_max = P_MAX_SOMBRA
 
-                # Guardar ambas potencias en memoria
                 st.session_state.power_data.append(watts)
                 st.session_state.power_max_data.append(p_max)
-                
-                # Refrescar la UI
-                metrica_v.metric("Voltaje MPPT", f"{volts:.2f} V")
-                metrica_i.metric("Potencia Ideal", f"{p_max:.2f} W") # Reutilizamos el hueco de Corriente
-                metrica_p.metric("Potencia MPPT", f"{watts:.2f} W")
-                
-                # Crear DataFrame para dibujar dos líneas juntas en la misma gráfica
-                df_power = pd.DataFrame({
-                    'Potencia MPPT (Real)': list(st.session_state.power_data),
-                    'Potencia Máx (Ideal)': list(st.session_state.power_max_data)
-                })
-                
-                # Dibujar con colores: Verde para lo real, Gris suave para el objetivo ideal
-                grafica_potencia.line_chart(df_power, color=["#00ff88", "#aaaaaa"])
 
-
-            # 4. ACTUALIZAR IRRADIANCIA (0x103)
             elif msg.arbitration_id == 0x103:
-                # Desescalar dividiendo por 10
                 irr = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=10.0)
-                
-                # Guardar la irradiancia en la memoria para la gráfica
                 st.session_state.irr_data.append(irr)
-                
-                # Refrescar UI 
-                metrica_irr.metric("Irradiancia Solar", f"{irr:.1f} W/m²")
-                grafica_irr.line_chart(list(st.session_state.irr_data), color="#ffa500")
 
-
-
-            # 5. ESNIFAR VELOCIDAD DEL COCHE (0x7E8)
             elif msg.arbitration_id == 0x7E8:
-                
-                # Comprobación del byte 2 para confirmar que es el PID de velocidad (0x0D)
                 if msg.data[2] == 0x0D: 
-                    
-                    # La velocidad real está alojada en el byte 3
                     velocidad = int(msg.data[3])
-                    
-                    # Guardar la velocidad en la memoria para la gráfica
                     st.session_state.speed_data.append(velocidad)
-                    
-                    # Refrescar UI
-                    metrica_vel_obd.metric("Velocidad Coche", f"{velocidad} km/h")
-                    grafica_vel.line_chart(list(st.session_state.speed_data), color="#00c0f9")
-
-
-                # Comprobación del byte 2 para confirmar que es el PID de RPM (0x0C)
                 if msg.data[2] == 0x0C: 
-                    
-                    # Cálculo de las RPMs reales a partir de los bytes 3 y 4
                     rpm = (msg.data[3] * 256 + msg.data[4]) / 4.0
-                    
-                    # Guardar las rpms en la memoria para la gráfica
                     st.session_state.rpm_data.append(rpm)
-                    
-                    # Refrescar UI
-                    metrica_rpm_obd.metric("Revoluciones", f"{int(rpm)} RPM")
-                    grafica_rpm.line_chart(list(st.session_state.rpm_data), color="#a200ff") 
-                
+
+
+        # 2. DIBUJAR PANTALLA (Solo 2 veces por segundo para evitar el cuelgue)
+        ahora = time.time()
+        if ahora - ultimo_refresco >= 0.5:
+            
+            # Actualizar números
+            metrica_temp.metric("Temperatura", f"{temp:.2f} °C")
+            metrica_irr.metric("Irradiancia", f"{irr:.1f} W/m²")
+            metrica_v.metric("V_MPPT", f"{volts:.2f} V")
+            metrica_pot_i.metric("P_Ideal", f"{p_max:.2f} W") 
+            metrica_pot_mppt.metric("P_Real", f"{watts:.2f} W")
+            metrica_vel_obd.metric("Velocidad", f"{velocidad} km/h")
+            metrica_x.metric("Eje X", f"{ax:.2f} g")
+            metrica_y.metric("Eje Y", f"{ay:.2f} g")
+            metrica_z.metric("Eje Z", f"{az:.2f} g")
+
+            # Actualizar Gráficas
+            grafica_temp.line_chart(list(st.session_state.temp_data), color="#ff4b4b")
+            grafica_irr.line_chart(list(st.session_state.irr_data), color="#ffa500")
+            
+            df_power = pd.DataFrame({'Potencia MPPT (Real)': list(st.session_state.power_data), 'Potencia Máx (Ideal)': list(st.session_state.power_max_data)})
+            grafica_potencia.line_chart(df_power, color=["#00ff88", "#aaaaaa"])
+            
+            df_accel = pd.DataFrame({'Eje X': list(st.session_state.accel_x), 'Eje Y': list(st.session_state.accel_y), 'Eje Z': list(st.session_state.accel_z)})
+            grafica_accel.line_chart(df_accel)
+            
+            if len(st.session_state.speed_data) > 0:
+                grafica_vel.line_chart(list(st.session_state.speed_data), color="#00c0f9")
+            #if len(st.session_state.rpm_data) > 0:
+            #    grafica_rpm.line_chart(list(st.session_state.rpm_data), color="#a200ff")
+            
+            # Reiniciar temporizador
+            ultimo_refresco = ahora
 
 except Exception as e:
     st.error(f"❌ Error de conexión CAN: {e}")
