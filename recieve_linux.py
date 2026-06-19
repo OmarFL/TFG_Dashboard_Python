@@ -119,7 +119,7 @@ try:
                 watts = bytes_to_float_escalado(msg.data[4], msg.data[5], escala=1000.0)
                 
                 # Cálculo de la Potencia Máxima Teórica basada en la última medida de irradiancia
-                if telemetria_vipv["Irradiancia"] > 150.0:
+                if telemetria_vipv["Irradiancia"] > 10.0:
                     p_max = P_MAX_SOL
                 else:
                     p_max = P_MAX_SOMBRA
@@ -242,5 +242,3 @@ finally:
         bus.shutdown()
         print("Bus CAN liberado correctamente.")
     archivo_csv.close()
-
-

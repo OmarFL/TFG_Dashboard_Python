@@ -3,6 +3,7 @@ import pandas as pd # type: ignore
 import can
 from collections import deque
 import time
+import plotly.graph_objects as go # librería Plotly, para hacer gráficas dinámicas
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="VIPV Telemetry", page_icon="🏎️", layout="wide")
@@ -18,12 +19,18 @@ def bytes_to_float_escalado(byte_alto, byte_bajo, escala=100.0):
 
 
 # --- ARRAYS DEL PANEL Y CÁLCULO DE MÁXIMOS TEÓRICOS ---
-v_vector = [0.548, 1.097, 1.645, 2.194, 2.742, 3.291, 3.839, 4.388, 4.936, 5.485, 6.033, 6.582, 7.13, 7.679, 8.228, 8.776, 9.324, 9.873, 10.422, 10.97, 11.519, 12.067, 12.615, 13.164, 13.712, 14.261, 14.809, 15.358, 15.907, 16.455, 17.004, 17.552, 18.101, 18.649, 19.198, 19.746, 20.295, 20.844, 21.392, 21.941, 22.489, 23.037, 23.587, 24.134, 24.683, 25.231, 25.78, 26.329, 26.877]
+v_vector = [0.0, 0.548, 1.097, 1.645, 2.194, 2.742, 3.291, 3.839, 4.388, 4.936, 5.485, 6.033, 6.582, 7.13, 7.679, 8.228, 8.776, 9.324, 9.873, 10.422, 10.97, 11.519, 12.067, 12.615, 13.164, 13.712, 14.261, 14.809, 15.358, 15.907, 16.455, 17.004, 17.552, 18.101, 18.649, 19.198, 19.746, 20.295, 20.844, 21.392, 21.941, 22.489, 23.037, 23.587, 24.134, 24.683, 25.231, 25.78, 26.329, 26.877]
 i_sol = [0.96, 0.95, 0.94, 0.93, 0.92, 0.91, 0.9, 0.89, 0.88, 0.87, 0.86, 0.85, 0.84, 0.83, 0.83, 0.82, 0.81, 0.8, 0.8, 0.79, 0.78, 0.77, 0.76, 0.76, 0.75, 0.74, 0.73, 0.72, 0.72, 0.71, 0.7, 0.69, 0.68, 0.68, 0.67, 0.66, 0.65, 0.64, 0.63, 0.63, 0.61, 0.6, 0.58, 0.56, 0.54, 0.51, 0.45, 0.34, 0.15, -0.14]
 i_sombra = [0.87, 0.85, 0.83, 0.82, 0.8, 0.79, 0.77, 0.75, 0.74, 0.73, 0.71, 0.69, 0.68, 0.67, 0.66, 0.64, 0.63, 0.62, 0.61, 0.6, 0.59, 0.58, 0.57, 0.56, 0.55, 0.54, 0.53, 0.52, 0.51, 0.5, 0.49, 0.47, 0.46, 0.45, 0.43, 0.42, 0.4, 0.39, 0.37, 0.36, 0.34, 0.32, 0.3, 0.28, 0.26, 0.23, 0.19, 0.13, 0.02, -0.24]
 
-P_MAX_SOL = max([v * i for v, i in zip(v_vector, i_sol)])
-P_MAX_SOMBRA = max([v * i for v, i in zip(v_vector, i_sombra)])
+# Precálculo de las curvas de Potencia completas para dibujarlas de fondo
+p_sol_curva = [v * i for v, i in zip(v_vector, i_sol)]
+p_sombra_curva = [v * i for v, i in zip(v_vector, i_sombra)]
+
+P_MAX_SOL = max(p_sol_curva)
+P_MAX_SOMBRA = max(p_sombra_curva)
+#P_MAX_SOL = max([v * i for v, i in zip(v_vector, i_sol)])
+#P_MAX_SOMBRA = max([v * i for v, i in zip(v_vector, i_sombra)])
 
 
 # --- INICIALIZACIÓN DE MEMORIA (Para que la gráfica avance sola) ---
@@ -90,8 +97,12 @@ with col_g4:
 st.divider()
 
 
+# SECCIÓN 3: Curva Dinámica 
+st.subheader("Curva Dinámica I-V")
+grafica_iv = st.empty() # El contenedor para Plotly
 
-# SECCIÓN 3: Dinámica Auxiliar (Acelerómetro y revoluciones)
+
+# SECCIÓN 4: Dinámica Auxiliar (Acelerómetro y revoluciones)
 st.subheader("Acelerómetro e Inercia")
 grafica_accel = st.empty()
 
@@ -133,15 +144,35 @@ try:
                 volts = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=100.0)
                 watts = bytes_to_float_escalado(msg.data[4], msg.data[5], escala=1000.0)
             
-                # UMBRAL FIJADO EN 150.0 W/m2
-                ultima_luz = st.session_state.irr_data[-1] if len(st.session_state.irr_data) > 0 else 0
-                if ultima_luz > 150.0:
-                    p_max = P_MAX_SOL
-                else:
-                    p_max = P_MAX_SOMBRA
+                # CÁLCULO DINÁMICO DE POTENCIA IDEAL
+
+                # ultima_luz = st.session_state.irr_data[-1] if len(st.session_state.irr_data) > 0 else 0
+                ultima_luz = st.session_state.irr_data[-1] if len(st.session_state.irr_data) > 0 else 10.0
+
+                #if ultima_luz > 150.0:
+                #   p_max = P_MAX_SOL
+                #else:
+                #    p_max = P_MAX_SOMBRA
+                
+                IRR_MAX_PY = 1000.0
+                IRR_MIN_PY = 10.0
+                
+                # Acotar límites
+                luz_acotada = max(IRR_MIN_PY, min(IRR_MAX_PY, ultima_luz))
+                
+                # Calcular la proporción de mezcla
+                prop_luz = (luz_acotada - IRR_MIN_PY) / (IRR_MAX_PY - IRR_MIN_PY)
+                
+                # Reconstruir la curva entera de potencia para esta luz exacta
+                curva_p_dinamica = [p_som + prop_luz * (p_sol - p_som) for p_som, p_sol in zip(p_sombra_curva, p_sol_curva)]
+                
+                # pico teórico máximo de la nueva curva
+                p_max = max(curva_p_dinamica)
+
 
                 st.session_state.power_data.append(watts)
                 st.session_state.power_max_data.append(p_max)
+
 
             elif msg.arbitration_id == 0x103:
                 irr = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=10.0)
@@ -156,7 +187,7 @@ try:
                     st.session_state.rpm_data.append(rpm)
 
 
-        # 2. DIBUJAR PANTALLA (Solo 2 veces por segundo para evitar el cuelgue)
+        # 2. DIBUJAR PANTALLA (Solo 2 veces por segundo (2 Hz) para evitar el cuelgue)
         ahora = time.time()
         if ahora - ultimo_refresco >= 0.5:
             
@@ -186,8 +217,66 @@ try:
             #if len(st.session_state.rpm_data) > 0:
             #    grafica_rpm.line_chart(list(st.session_state.rpm_data), color="#a200ff")
             
+
+            # --- CONSTRUCCIÓN DE LA GRÁFICA PLOTLY (P-V EN TIEMPO REAL) ---
+            fig = go.Figure()
+            
+            # Límites de calibración
+            IRR_MAX_PY = 1000.0
+            IRR_MIN_PY = 10.0
+            
+            # Recoger la última irradiancia registrada
+            ultima_luz = st.session_state.irr_data[-1] if len(st.session_state.irr_data) > 0 else 10.0
+            luz_acotada = max(IRR_MIN_PY, min(IRR_MAX_PY, ultima_luz))
+
+            prop_luz = (luz_acotada - IRR_MIN_PY) / (IRR_MAX_PY - IRR_MIN_PY)
+            
+            # CURVA I-V REAL TEÓRICA (Interpolación lineal)
+            curva_i_dinamica = [i_som + prop_luz * (i_s - i_som) for i_som, i_s in zip(i_sombra, i_sol)]
+
+
+            # 1. Curvas límites estáticas de fondo (Líneas guía transparentes)
+            fig.add_trace(go.Scatter(
+                x=v_vector, y=i_sombra, mode='lines', name="Límite Sombra (10 W/m²)", 
+                line=dict(color="rgba(150, 150, 150, 0.2)", width=2, dash='dash')
+            ))
+            fig.add_trace(go.Scatter(
+                x=v_vector, y=i_sol, mode='lines', name="Límite Sol (1000 W/m²)", 
+                line=dict(color="rgba(150, 150, 150, 0.2)", width=2, dash='dash')
+            ))
+            
+            # 2. Curva Teórica Activa (La que muta en tiempo real)
+            fig.add_trace(go.Scatter(
+                x=v_vector, y=curva_i_dinamica, mode='lines', name="Curva Teórica Actual", 
+                line=dict(color="rgba(0, 200, 255, 0.9)", width=4)
+            ))
+            
+            # 3. CORRIENTE ACTUAL EXTRAÍDA POR EL MPPT (I = P / V)
+            # Evitar la división por cero si el voltaje es muy bajo al arrancar
+            amps_actuales = (watts / volts) if volts > 0.5 else 0.0
+
+            # 4. PUNTO MPPT REAL (Búsqueda del codo)
+            fig.add_trace(go.Scatter(
+                x=[volts], y=[amps_actuales], mode='markers', name="Rastreador MPPT",
+                marker=dict(color='red', size=14, symbol='circle', line=dict(color='white', width=2))
+            ))
+
+            fig.update_layout(
+                title=f"Búsqueda del Codo en Tiempo Real (Irradiancia: {ultima_luz:.1f} W/m²)",
+                xaxis_title="Voltaje [V]",
+                yaxis_title="Corriente [A]",
+                margin=dict(l=10, r=10, t=40, b=10),
+                height=450,
+                showlegend=True, # Activamos la leyenda para que los profesores vean las referencias
+                plot_bgcolor='rgba(0,0,0,0)'
+            )
+            
+            grafica_iv.plotly_chart(fig, width='stretch', key=f"grafica_iv_mppt_{ahora}")
+
+
             # Reiniciar temporizador
             ultimo_refresco = ahora
+
 
 except Exception as e:
     st.error(f"❌ Error de conexión CAN: {e}")
