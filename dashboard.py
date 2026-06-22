@@ -4,6 +4,7 @@ import can
 from collections import deque
 import time
 import plotly.graph_objects as go # librería Plotly, para hacer gráficas dinámicas
+import altair as alt # liberría Altair (motor gráfico interno de Streamlit)
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="VIPV Telemetry", page_icon="🏎️", layout="wide")
@@ -42,8 +43,8 @@ if 'temp_data' not in st.session_state:
     st.session_state.accel_x = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.accel_y = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.accel_z = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
-    st.session_state.power_data = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
-    st.session_state.power_max_data = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
+    st.session_state.power_data = deque([None]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
+    st.session_state.power_max_data = deque([None]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.irr_data = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.speed_data = deque([0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.rpm_data = deque([0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
@@ -115,6 +116,7 @@ try:
     bus = can.interface.Bus(channel='can0', bustype='socketcan')
     
     ultimo_refresco = time.time()
+    ultimo_refresco_iv = time.time()
     
     # Variables de estado temporal
     temp=0.0; ax=0.0; ay=0.0; az=0.0; volts=0.0; watts=0.0; p_max=0.0; irr=0.0; velocidad=0; rpm=0
@@ -149,11 +151,6 @@ try:
                 # ultima_luz = st.session_state.irr_data[-1] if len(st.session_state.irr_data) > 0 else 0
                 ultima_luz = st.session_state.irr_data[-1] if len(st.session_state.irr_data) > 0 else 10.0
 
-                #if ultima_luz > 150.0:
-                #   p_max = P_MAX_SOL
-                #else:
-                #    p_max = P_MAX_SOMBRA
-                
                 IRR_MAX_PY = 1000.0
                 IRR_MIN_PY = 10.0
                 
@@ -187,7 +184,7 @@ try:
                     st.session_state.rpm_data.append(rpm)
 
 
-        # 2. DIBUJAR PANTALLA (Solo 2 veces por segundo (2 Hz) para evitar el cuelgue)
+        # 2. DIBUJAR PANTALLA (Solo 2 veces por segundo (2 Hz) para evitar problemas de sincronización)
         ahora = time.time()
         if ahora - ultimo_refresco >= 0.5:
             
@@ -202,80 +199,203 @@ try:
             metrica_y.metric("Eje Y", f"{ay:.2f} g")
             metrica_z.metric("Eje Z", f"{az:.2f} g")
 
-            # Actualizar Gráficas
+            # GRÁFICA DE TEMPERATURA
             grafica_temp.line_chart(list(st.session_state.temp_data), color="#ff4b4b")
-            grafica_irr.line_chart(list(st.session_state.irr_data), color="#ffa500")
+
+            # GRÁFICA DE IRRADIANCIA
+            grafica_irr.line_chart(list(st.session_state.irr_data), color="#ffa500")  
+
+            # GRÁFICA DE POTENCIA
+            #df_power = pd.DataFrame({'Potencia MPPT (Real)': list(st.session_state.power_data), 'Potencia Máx (Ideal)': list(st.session_state.power_max_data)})
+            #grafica_potencia.line_chart(df_power, color=["#00ff88", "#aaaaaa"])
+
+
+            # GRÁFICA DE POTENCIA CON ZOOM FORZADO (Altair)
+            df_power = pd.DataFrame({
+                'Potencia MPPT (Real)': list(st.session_state.power_data), 
+                'Potencia Máx (Ideal)': list(st.session_state.power_max_data)
+            }).reset_index()
+
+            # Preparar los datos para que Altair los interprete
+            df_melted = df_power.melt(id_vars='index', var_name='Señal', value_name='W')
+
+            # Construir la gráfica forzando el zoom (zero=False)
+            chart = alt.Chart(df_melted).mark_line(strokeWidth=3).encode(
+                x=alt.X('index', axis=alt.Axis(labels=False, title=None)), # Ocultar el eje X por limpieza
+                y=alt.Y('W', scale=alt.Scale(domain=[6.0, 15.0]), title="Potencia [W]"), #ZOOM
+                color=alt.Color('Señal', scale=alt.Scale(
+                    domain=['Potencia MPPT (Real)', 'Potencia Máx (Ideal)'],
+                    range=["#00ff88", "#aaaaaa"] 
+                ))
+            ).properties(height=250)
+
+            # Renderizado asíncrono
+            grafica_potencia.altair_chart(chart, width='stretch')
             
-            df_power = pd.DataFrame({'Potencia MPPT (Real)': list(st.session_state.power_data), 'Potencia Máx (Ideal)': list(st.session_state.power_max_data)})
-            grafica_potencia.line_chart(df_power, color=["#00ff88", "#aaaaaa"])
+
+
+            # GRÁFICA DE POTENCIA (Usando Plotly para zoom dinámico)
+            #fig_pot = go.Figure()
             
+            # Línea de Potencia Ideal (Gris)
+            #fig_pot.add_trace(go.Scatter(
+            #    y=list(st.session_state.power_max_data), mode='lines', name="P_Ideal", 
+            #    line=dict(color="#aaaaaa", width=2)
+            #))
+            # Línea de Potencia Real MPPT (Verde brillante)
+            #fig_pot.add_trace(go.Scatter(
+            #    y=list(st.session_state.power_data), mode='lines', name="P_Real", 
+            #    line=dict(color="#00ff88", width=3)
+            #))
+
+            # Extraemos el valor mínimo y máximo histórico del buffer para hacer el auto-zoom
+            #min_p = min(list(st.session_state.power_data) + list(st.session_state.power_max_data))
+            #max_p = max(list(st.session_state.power_data) + list(st.session_state.power_max_data))
+
+            #fig_pot.update_layout(
+            #    margin=dict(l=0, r=0, t=10, b=0),
+            #    height=250,
+                # Forzar eje Y para que abarque los datos dejando 1.5W de margen arriba y abajo
+            #    yaxis=dict(range=[max(0, min_p - 1.5), max_p + 1.5]), 
+            #    plot_bgcolor='rgba(0,0,0,0)',
+            #    showlegend=True,
+            #    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            #)
+            
+            #grafica_potencia.plotly_chart(fig_pot, width='stretch', key=f"pot_{ahora}")
+
+
+            # GRÁFICA DEL ACELERÓMETRO
             df_accel = pd.DataFrame({'Eje X': list(st.session_state.accel_x), 'Eje Y': list(st.session_state.accel_y), 'Eje Z': list(st.session_state.accel_z)})
             grafica_accel.line_chart(df_accel)
             
+
+            # GRÁFICA DE VELOCIDAD
             if len(st.session_state.speed_data) > 0:
                 grafica_vel.line_chart(list(st.session_state.speed_data), color="#00c0f9")
-            #if len(st.session_state.rpm_data) > 0:
-            #    grafica_rpm.line_chart(list(st.session_state.rpm_data), color="#a200ff")
-            
-
-            # --- CONSTRUCCIÓN DE LA GRÁFICA PLOTLY (P-V EN TIEMPO REAL) ---
-            fig = go.Figure()
-            
-            # Límites de calibración
-            IRR_MAX_PY = 1000.0
-            IRR_MIN_PY = 10.0
-            
-            # Recoger la última irradiancia registrada
-            ultima_luz = st.session_state.irr_data[-1] if len(st.session_state.irr_data) > 0 else 10.0
-            luz_acotada = max(IRR_MIN_PY, min(IRR_MAX_PY, ultima_luz))
-
-            prop_luz = (luz_acotada - IRR_MIN_PY) / (IRR_MAX_PY - IRR_MIN_PY)
-            
-            # CURVA I-V REAL TEÓRICA (Interpolación lineal)
-            curva_i_dinamica = [i_som + prop_luz * (i_s - i_som) for i_som, i_s in zip(i_sombra, i_sol)]
-
-
-            # 1. Curvas límites estáticas de fondo (Líneas guía transparentes)
-            fig.add_trace(go.Scatter(
-                x=v_vector, y=i_sombra, mode='lines', name="Límite Sombra (10 W/m²)", 
-                line=dict(color="rgba(150, 150, 150, 0.2)", width=2, dash='dash')
-            ))
-            fig.add_trace(go.Scatter(
-                x=v_vector, y=i_sol, mode='lines', name="Límite Sol (1000 W/m²)", 
-                line=dict(color="rgba(150, 150, 150, 0.2)", width=2, dash='dash')
-            ))
-            
-            # 2. Curva Teórica Activa (La que muta en tiempo real)
-            fig.add_trace(go.Scatter(
-                x=v_vector, y=curva_i_dinamica, mode='lines', name="Curva Teórica Actual", 
-                line=dict(color="rgba(0, 200, 255, 0.9)", width=4)
-            ))
-            
-            # 3. CORRIENTE ACTUAL EXTRAÍDA POR EL MPPT (I = P / V)
-            # Evitar la división por cero si el voltaje es muy bajo al arrancar
-            amps_actuales = (watts / volts) if volts > 0.5 else 0.0
-
-            # 4. PUNTO MPPT REAL (Búsqueda del codo)
-            fig.add_trace(go.Scatter(
-                x=[volts], y=[amps_actuales], mode='markers', name="Rastreador MPPT",
-                marker=dict(color='red', size=14, symbol='circle', line=dict(color='white', width=2))
-            ))
-
-            fig.update_layout(
-                title=f"Búsqueda del Codo en Tiempo Real (Irradiancia: {ultima_luz:.1f} W/m²)",
-                xaxis_title="Voltaje [V]",
-                yaxis_title="Corriente [A]",
-                margin=dict(l=10, r=10, t=40, b=10),
-                height=450,
-                showlegend=True, # Activamos la leyenda para que los profesores vean las referencias
-                plot_bgcolor='rgba(0,0,0,0)'
-            )
-            
-            grafica_iv.plotly_chart(fig, width='stretch', key=f"grafica_iv_mppt_{ahora}")
 
 
             # Reiniciar temporizador
             ultimo_refresco = ahora
+
+
+
+        # --- CONTROL INDEPENDIENTE DE 1 SEGUNDO PARA LA CURVA I-V ---
+        if ahora - ultimo_refresco_iv >= 1.0:
+            fig = go.Figure()
+            
+            # Cálculo de la curva dinámica (Sincronizado con la STM32)
+            IRR_MAX_PY = 1000.0
+            IRR_MIN_PY = 10.0
+            ultima_luz = st.session_state.irr_data[-1] if len(st.session_state.irr_data) > 0 else 40.0
+            luz_acotada = max(IRR_MIN_PY, min(IRR_MAX_PY, ultima_luz))
+            
+            prop_luz = (luz_acotada - IRR_MIN_PY) / (IRR_MAX_PY - IRR_MIN_PY)
+            
+            # Línea exacta sobre la que se mueve el MPP
+            curva_i_dinamica = [i_som + prop_luz * (i_s - i_som) for i_som, i_s in zip(i_sombra, i_sol)]
+            
+
+            # Umbral para cambio de gráfica I-V
+            UMBRAL_LUZ = 150.0  
+            if ultima_luz > UMBRAL_LUZ:
+                color_activa = "rgba(0, 255, 136, 1.0)"  # Verde brillante
+                nombre_estado = "ESTADO: SOL"
+            else:
+                color_activa = "rgba(0, 200, 255, 1.0)"  # Azul brillante
+                nombre_estado = "ESTADO: SOMBRA"
+                
+
+            # Dibujo de los límites de la gráfica (línea discontinua de color gris)
+            fig.add_trace(go.Scatter(x=v_vector, y=i_sombra, mode='lines', name="Límite Sombra", line=dict(color="rgba(100, 100, 100, 0.3)", width=2, dash='dash')))
+            fig.add_trace(go.Scatter(x=v_vector, y=i_sol, mode='lines', name="Límite Sol", line=dict(color="rgba(100, 100, 100, 0.3)", width=2, dash='dash')))
+            
+
+            # Representación de la curva I-V real y el punto MPP sobre ella
+            fig.add_trace(go.Scatter(
+                x=v_vector, y=curva_i_dinamica, mode='lines', name="Curva Teórica Actual", 
+                line=dict(color=color_activa, width=4)
+            ))
+            
+            amps_actuales = (watts / volts) if volts > 0.5 else 0.0
+            fig.add_trace(go.Scatter(
+                x=[volts], y=[amps_actuales], mode='markers', name="Rastreador MPPT",
+                marker=dict(color='red', size=16, symbol='circle', line=dict(color='white', width=2))
+            ))
+
+
+            # Zoom y ajustes gráficos
+            fig.update_layout(
+                title=f"Búsqueda del Codo | Irradiancia: {ultima_luz:.1f} W/m² | {nombre_estado}",
+                xaxis_title="Voltaje [V]",
+                yaxis_title="Corriente [A]",
+                margin=dict(l=10, r=10, t=40, b=10),
+                height=450,
+                #showlegend=False,
+                showlegend=True, 
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                plot_bgcolor='rgba(0,0,0,0)',
+                yaxis=dict(range=[-0.25, 1.05]) 
+            )
+            
+            grafica_iv.plotly_chart(fig, width='stretch', key=f"grafica_iv_mppt_{ahora}")
+            ultimo_refresco_iv = ahora
+
+
+            # CONSTRUCCIÓN DE LA GRÁFICA PLOTLY (I-V EN TIEMPO REAL)
+            #fig = go.Figure()
+            
+            # Límites de calibración
+            #IRR_MAX_PY = 1000.0
+            #IRR_MIN_PY = 10.0
+            
+            # Recoger la última irradiancia registrada
+            #ultima_luz = st.session_state.irr_data[-1] if len(st.session_state.irr_data) > 0 else 10.0
+            #luz_acotada = max(IRR_MIN_PY, min(IRR_MAX_PY, ultima_luz))
+
+            #prop_luz = (luz_acotada - IRR_MIN_PY) / (IRR_MAX_PY - IRR_MIN_PY)
+            
+            # CURVA I-V REAL TEÓRICA (Interpolación lineal)
+            #curva_i_dinamica = [i_som + prop_luz * (i_s - i_som) for i_som, i_s in zip(i_sombra, i_sol)]
+
+
+            # 1. Curvas límites estáticas de fondo (Líneas guía transparentes)
+            #fig.add_trace(go.Scatter(
+            #    x=v_vector, y=i_sombra, mode='lines', name="Límite Sombra (10 W/m²)", 
+            #    line=dict(color="rgba(150, 150, 150, 0.2)", width=2, dash='dash')
+            #))
+            #fig.add_trace(go.Scatter(
+            #    x=v_vector, y=i_sol, mode='lines', name="Límite Sol (1000 W/m²)", 
+            #    line=dict(color="rgba(150, 150, 150, 0.2)", width=2, dash='dash')
+            #))
+            
+            # 2. Curva Teórica Activa (La que muta en tiempo real)
+            #fig.add_trace(go.Scatter(
+            #    x=v_vector, y=curva_i_dinamica, mode='lines', name="Curva Teórica Actual", 
+            #    line=dict(color="rgba(0, 200, 255, 0.9)", width=4)
+            #))
+            
+            # 3. CORRIENTE ACTUAL EXTRAÍDA POR EL MPPT (I = P / V)
+            # Evitar la división por cero si el voltaje es muy bajo al arrancar
+            #amps_actuales = (watts / volts) if volts > 0.5 else 0.0
+
+            # 4. PUNTO MPPT REAL (Búsqueda del codo)
+            #fig.add_trace(go.Scatter(
+            #    x=[volts], y=[amps_actuales], mode='markers', name="Rastreador MPPT",
+            #    marker=dict(color='red', size=14, symbol='circle', line=dict(color='white', width=2))
+            #))
+
+            #fig.update_layout(
+            #    title=f"Búsqueda del Codo en Tiempo Real (Irradiancia: {ultima_luz:.1f} W/m²)",
+            #    xaxis_title="Voltaje [V]",
+            #    yaxis_title="Corriente [A]",
+            #    margin=dict(l=10, r=10, t=40, b=10),
+            #    height=450,
+            #    showlegend=True, # Activamos la leyenda para que los profesores vean las referencias
+            #    plot_bgcolor='rgba(0,0,0,0)'
+            #)
+            
+            #grafica_iv.plotly_chart(fig, width='stretch', key=f"grafica_iv_mppt_{ahora}")
 
 
 except Exception as e:
