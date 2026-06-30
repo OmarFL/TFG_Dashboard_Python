@@ -159,12 +159,15 @@ try:
                 
                 # Calcular la proporción de mezcla
                 prop_luz = (luz_acotada - IRR_MIN_PY) / (IRR_MAX_PY - IRR_MIN_PY)
+
+                # Fórmula matemática directa
+                p_max = P_MAX_SOMBRA + prop_luz * (P_MAX_SOL - P_MAX_SOMBRA)
                 
                 # Reconstruir la curva entera de potencia para esta luz exacta
-                curva_p_dinamica = [p_som + prop_luz * (p_sol - p_som) for p_som, p_sol in zip(p_sombra_curva, p_sol_curva)]
+                #curva_p_dinamica = [p_som + prop_luz * (p_sol - p_som) for p_som, p_sol in zip(p_sombra_curva, p_sol_curva)]
                 
                 # pico teórico máximo de la nueva curva
-                p_max = max(curva_p_dinamica)
+                #p_max = max(curva_p_dinamica)
 
 
                 st.session_state.power_data.append(watts)
@@ -212,8 +215,8 @@ try:
 
             # GRÁFICA DE POTENCIA CON ZOOM FORZADO (Altair)
             df_power = pd.DataFrame({
-                'Potencia MPPT (Real)': list(st.session_state.power_data), 
-                'Potencia Máx (Ideal)': list(st.session_state.power_max_data)
+                'Potencia Real (MPPT)': list(st.session_state.power_data), 
+                'Potencia Ideal (MPPT)': list(st.session_state.power_max_data)
             }).reset_index()
 
             # Preparar los datos para que Altair los interprete
@@ -224,7 +227,7 @@ try:
                 x=alt.X('index', axis=alt.Axis(labels=False, title=None)), # Ocultar el eje X por limpieza
                 y=alt.Y('W', scale=alt.Scale(domain=[6.0, 15.0]), title="Potencia [W]"), #ZOOM
                 color=alt.Color('Señal', scale=alt.Scale(
-                    domain=['Potencia MPPT (Real)', 'Potencia Máx (Ideal)'],
+                    domain=['Potencia Real (MPPT)', 'Potencia Ideal (MPPT)'],
                     range=["#00ff88", "#aaaaaa"] 
                 ))
             ).properties(height=250)

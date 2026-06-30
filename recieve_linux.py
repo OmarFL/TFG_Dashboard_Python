@@ -119,10 +119,24 @@ try:
                 watts = bytes_to_float_escalado(msg.data[4], msg.data[5], escala=1000.0)
                 
                 # Cálculo de la Potencia Máxima Teórica basada en la última medida de irradiancia
-                if telemetria_vipv["Irradiancia"] > 10.0:
-                    p_max = P_MAX_SOL
-                else:
-                    p_max = P_MAX_SOMBRA
+                #if telemetria_vipv["Irradiancia"] > 10.0:
+                #    p_max = P_MAX_SOL
+                #else:
+                #    p_max = P_MAX_SOMBRA
+
+
+                # Cálculo de la Potencia Ideal Continua
+                ultima_luz = telemetria_vipv["Irradiancia"]
+
+                # Acotar límites de seguridad matemática
+                luz_acotada = max(10.0, min(1000.0, ultima_luz))
+                
+                # Calcular la proporción (Factor de mezcla de 0.0 a 1.0)
+                prop_luz = (luz_acotada - 10.0) / (1000.0 - 10.0)
+                
+                # Fórmula matemática de la Potencia Ideal (Interpolación lineal)
+                p_max = P_MAX_SOMBRA + prop_luz * (P_MAX_SOL - P_MAX_SOMBRA)
+
 
                 telemetria_vipv["Voltaje"] = volts
                 telemetria_vipv["Potencia"] = watts
