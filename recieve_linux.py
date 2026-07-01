@@ -42,12 +42,23 @@ def bytes_to_float_escalado(byte_alto, byte_bajo, escala=100.0):
 
 
 # --- ARRAYS DEL PANEL Y CÁLCULO DE MÁXIMOS TEÓRICOS ---
-v_vector = [0.548, 1.097, 1.645, 2.194, 2.742, 3.291, 3.839, 4.388, 4.936, 5.485, 6.033, 6.582, 7.13, 7.679, 8.228, 8.776, 9.324, 9.873, 10.422, 10.97, 11.519, 12.067, 12.615, 13.164, 13.712, 14.261, 14.809, 15.358, 15.907, 16.455, 17.004, 17.552, 18.101, 18.649, 19.198, 19.746, 20.295, 20.844, 21.392, 21.941, 22.489, 23.037, 23.587, 24.134, 24.683, 25.231, 25.78, 26.329, 26.877]
-i_sol = [0.96, 0.95, 0.94, 0.93, 0.92, 0.91, 0.9, 0.89, 0.88, 0.87, 0.86, 0.85, 0.84, 0.83, 0.83, 0.82, 0.81, 0.8, 0.8, 0.79, 0.78, 0.77, 0.76, 0.76, 0.75, 0.74, 0.73, 0.72, 0.72, 0.71, 0.7, 0.69, 0.68, 0.68, 0.67, 0.66, 0.65, 0.64, 0.63, 0.63, 0.61, 0.6, 0.58, 0.56, 0.54, 0.51, 0.45, 0.34, 0.15, -0.14]
-i_sombra = [0.87, 0.85, 0.83, 0.82, 0.8, 0.79, 0.77, 0.75, 0.74, 0.73, 0.71, 0.69, 0.68, 0.67, 0.66, 0.64, 0.63, 0.62, 0.61, 0.6, 0.59, 0.58, 0.57, 0.56, 0.55, 0.54, 0.53, 0.52, 0.51, 0.5, 0.49, 0.47, 0.46, 0.45, 0.43, 0.42, 0.4, 0.39, 0.37, 0.36, 0.34, 0.32, 0.3, 0.28, 0.26, 0.23, 0.19, 0.13, 0.02, -0.24]
+v_vector = [0.0, 0.5485, 1.0970, 1.6455, 2.1941, 2.7426, 3.2911, 3.8396, 4.3881, 4.9366, 5.4852, 6.0337, 6.5822, 7.1307, 7.6792, 8.2277, 8.7762, 9.3248, 9.8733, 10.4218, 10.9703, 11.5188, 12.0673, 12.6158, 13.1644, 13.7129, 14.2614, 14.8099, 15.3584, 15.9069, 16.4555, 17.0040, 17.5525, 18.1010, 18.6495, 19.1980, 19.7465, 20.2951, 20.8436, 21.3921, 21.9406, 22.4891, 23.0376, 23.5862, 24.1347, 24.6832, 25.2317, 25.7802, 26.3287, 26.8772]
+i_sol = [0.9576, 0.9472, 0.9368, 0.9265, 0.9161, 0.9057, 0.8953, 0.8849, 0.8745, 0.8651, 0.8596, 0.8540, 0.8482, 0.8422, 0.8360, 0.8298, 0.8244, 0.8190, 0.8134, 0.8075, 0.8015, 0.7952, 0.7890, 0.7835, 0.7779, 0.7721, 0.7661, 0.7598, 0.7533, 0.7468, 0.7412, 0.7354, 0.7293, 0.7229, 0.7163, 0.7092, 0.7018, 0.6938, 0.6852, 0.6758, 0.6654, 0.6533, 0.6392, 0.6212, 0.5962, 0.5550, 0.4832, 0.3640, 0.1721, -0.1322]
+i_sombra = [0.9392, 0.9288, 0.9185, 0.9081, 0.8978, 0.8874, 0.8770, 0.8667, 0.8563, 0.8460, 0.8369, 0.8288, 0.8203, 0.8114, 0.8021, 0.7938, 0.7870, 0.7800, 0.7728, 0.7653, 0.7576, 0.7494, 0.7408, 0.7317, 0.7234, 0.7162, 0.7087, 0.7009, 0.6928, 0.6841, 0.6750, 0.6653, 0.6552, 0.6463, 0.6384, 0.6302, 0.6216, 0.6125, 0.6027, 0.5922, 0.5808, 0.5686, 0.5551, 0.5394, 0.5191, 0.4881, 0.4315, 0.3245, 0.1421, -0.1537]
 
-P_MAX_SOL = max([v * i for v, i in zip(v_vector, i_sol)])
-P_MAX_SOMBRA = max([v * i for v, i in zip(v_vector, i_sombra)])
+# Precálculo de curvas base
+p_sol_curva = [v * i for v, i in zip(v_vector, i_sol)]
+p_sombra_curva = [v * i for v, i in zip(v_vector, i_sombra)]
+P_MAX_SOL = max(p_sol_curva)
+P_MAX_SOMBRA = max(p_sombra_curva)
+
+# --- CONSTANTES DE CALIBRACIÓN ---
+P_STC_REF = 56.233
+IRR_STC_REF = 1000.0
+
+# Determinar irradiancias de calibración de las curvas base
+irr_eq_sol = IRR_STC_REF * (P_MAX_SOL / P_STC_REF)
+irr_eq_sombra = IRR_STC_REF * (P_MAX_SOMBRA / P_STC_REF)
 # -------------------------------------------------------------
 
 
@@ -63,10 +74,6 @@ writer.writerow([
     'Timestamp', 'Temperatura [ºC]', 'Accel_X [g]', 'Accel_Y [g]', 'Accel_Z [g]', 
     'Voltaje_MPPT [V]', 'Potencia_Extraida [W]', 'Potencia_Teorica [W]', 'Irradiancia [W/m^2]', 'Velocidad [km/h]'
 ])
-#writer.writerow([
-#    'Timestamp', 'Temp_C', 'Accel_X', 'Accel_Y', 'Accel_Z', 
-#    'Voltaje_V', 'Corriente_A', 'Potencia_W', 'Irradiancia_W_m2', 'Velocidad_kmh', 'RPM'
-#])
 
 archivo_csv.flush()  
 print(f"-> Grabando datos de la prueba en: {nombre_archivo}\n")
@@ -129,13 +136,20 @@ try:
                 ultima_luz = telemetria_vipv["Irradiancia"]
 
                 # Acotar límites de seguridad matemática
-                luz_acotada = max(10.0, min(1000.0, ultima_luz))
+                luz_acotada = max(0.0, min(1000.0, ultima_luz))
                 
                 # Calcular la proporción (Factor de mezcla de 0.0 a 1.0)
-                prop_luz = (luz_acotada - 10.0) / (1000.0 - 10.0)
+                #prop_luz = (luz_acotada - 10.0) / (1000.0 - 10.0)
                 
                 # Fórmula matemática de la Potencia Ideal (Interpolación lineal)
-                p_max = P_MAX_SOMBRA + prop_luz * (P_MAX_SOL - P_MAX_SOMBRA)
+                #p_max = P_MAX_SOMBRA + prop_luz * (P_MAX_SOL - P_MAX_SOMBRA)
+
+                if luz_acotada > 150.0:
+                    ratio = luz_acotada / irr_eq_sol
+                    p_max = P_MAX_SOL * ratio
+                else:
+                    ratio = luz_acotada / irr_eq_sombra
+                    p_max = P_MAX_SOMBRA * ratio
 
 
                 telemetria_vipv["Voltaje"] = volts
@@ -184,11 +198,11 @@ try:
                     print(f"[OBD COCHE] Velocidad Actual: {vel} km/h")
 
                 # PID 0x0C: RPMs
-                if msg.data[2] == 0x0C:
-                    rpm = (msg.data[3] * 256 + msg.data[4]) / 4.0
-                    telemetria_vipv["RPM"] = rpm
-                    
-                    print(f"[OBD COCHE] RPM: {int(rpm)}")
+                #if msg.data[2] == 0x0C:
+                #    rpm = (msg.data[3] * 256 + msg.data[4]) / 4.0
+                #    telemetria_vipv["RPM"] = rpm
+                #    
+                #    print(f"[OBD COCHE] RPM: {int(rpm)}")
 
 
         # --- GUARDADO EN CSV (Se ejecuta en cada recepción) ---
@@ -202,7 +216,8 @@ try:
             #tiempo_actual = datetime.now().strftime("%H:%M:%S.%f")[:-3]
 
             # Limitar los números a 2 decimales y convertir a cadena para ordenar el Excel
-            # NOTA: Excel usa comas ',' para los decimales, por ello usar replace('.', ',')
+            # NOTA: Excel usa comas ',' para los decimales, por ello es útil usar replace('.', ',') para 
+            # el posterior tratamiento de los datos guardados en el CSV
             p_extraida_formateada = f"{telemetria_vipv['Potencia']:.2f}".replace('.', ',')
             p_teorica_formateada = f"{telemetria_vipv['Potencia_Teorica']:.2f}".replace('.', ',')
             v_mppt_formateado = f"{telemetria_vipv['Voltaje']:.2f}".replace('.', ',')
