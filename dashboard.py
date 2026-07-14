@@ -22,7 +22,7 @@ def bytes_to_float_escalado(byte_alto, byte_bajo, escala=100.0):
 # --- ARRAYS DEL PANEL Y CÁLCULO DE MÁXIMOS TEÓRICOS ---
 v_vector = [0.0, 0.5485, 1.0970, 1.6455, 2.1941, 2.7426, 3.2911, 3.8396, 4.3881, 4.9366, 5.4852, 6.0337, 6.5822, 7.1307, 7.6792, 8.2277, 8.7762, 9.3248, 9.8733, 10.4218, 10.9703, 11.5188, 12.0673, 12.6158, 13.1644, 13.7129, 14.2614, 14.8099, 15.3584, 15.9069, 16.4555, 17.0040, 17.5525, 18.1010, 18.6495, 19.1980, 19.7465, 20.2951, 20.8436, 21.3921, 21.9406, 22.4891, 23.0376, 23.5862, 24.1347, 24.6832, 25.2317, 25.7802, 26.3287, 26.8772]
 i_sol = [0.9576, 0.9472, 0.9368, 0.9265, 0.9161, 0.9057, 0.8953, 0.8849, 0.8745, 0.8651, 0.8596, 0.8540, 0.8482, 0.8422, 0.8360, 0.8298, 0.8244, 0.8190, 0.8134, 0.8075, 0.8015, 0.7952, 0.7890, 0.7835, 0.7779, 0.7721, 0.7661, 0.7598, 0.7533, 0.7468, 0.7412, 0.7354, 0.7293, 0.7229, 0.7163, 0.7092, 0.7018, 0.6938, 0.6852, 0.6758, 0.6654, 0.6533, 0.6392, 0.6212, 0.5962, 0.5550, 0.4832, 0.3640, 0.1721, -0.1322]
-i_sombra = [0.9392, 0.9288, 0.9185, 0.9081, 0.8978, 0.8874, 0.8770, 0.8667, 0.8563, 0.8460, 0.8369, 0.8288, 0.8203, 0.8114, 0.8021, 0.7938, 0.7870, 0.7800, 0.7728, 0.7653, 0.7576, 0.7494, 0.7408, 0.7317, 0.7234, 0.7162, 0.7087, 0.7009, 0.6928, 0.6841, 0.6750, 0.6653, 0.6552, 0.6463, 0.6384, 0.6302, 0.6216, 0.6125, 0.6027, 0.5922, 0.5808, 0.5686, 0.5551, 0.5394, 0.5191, 0.4881, 0.4315, 0.3245, 0.1421, -0.1537]
+i_sombra = [0.7131, 0.6996, 0.6862, 0.6727, 0.6592, 0.6458, 0.6323, 0.6248, 0.6175, 0.6099, 0.6020, 0.5937, 0.5848, 0.5755, 0.5658, 0.5557, 0.5453, 0.5347, 0.5239, 0.5128, 0.5034, 0.4945, 0.4855, 0.4763, 0.4668, 0.4571, 0.4472, 0.4369, 0.4263, 0.4153, 0.4038, 0.3920, 0.3795, 0.3665, 0.3531, 0.3392, 0.3250, 0.3101, 0.2947, 0.2784, 0.2612, 0.2429, 0.2233, 0.2015, 0.1775, 0.1506, 0.1193, 0.0737, -0.0480, -0.3115]
 
 # Precálculo de las curvas de Potencia completas para dibujarlas de fondo
 p_sol_curva = [v * i for v, i in zip(v_vector, i_sol)]
@@ -54,13 +54,15 @@ if 'temp_data' not in st.session_state:
     st.session_state.irr_data = deque([0.0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.speed_data = deque([0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
     st.session_state.rpm_data = deque([0]*MAX_PUNTOS, maxlen=MAX_PUNTOS)
+    st.session_state.contador_quieto = 0
+    st.session_state.estado_coche = "CALIBRANDO..."
 
 
 # ==============================================================================
 # --- MAQUETACIÓN DE LA WEB ---
 # ==============================================================================
 st.subheader("Datos en Tiempo Real")
-col_m1, col_m2, col_m3, col_m4, col_m5, col_m6, col_m7, col_m8, col_m9 = st.columns(9)
+col_m1, col_m2, col_m3, col_m4, col_m5, col_m6, col_m7, col_m8, col_m9, col_m10 = st.columns(10)
 metrica_temp = col_m1.empty()
 metrica_irr = col_m2.empty()
 metrica_v = col_m3.empty()
@@ -69,7 +71,8 @@ metrica_pot_mppt = col_m5.empty() # Potencia MPPT
 metrica_vel_obd = col_m6.empty()
 metrica_x = col_m7.empty()
 metrica_y = col_m8.empty()
-metrica_z = col_m9.empty() 
+metrica_z = col_m9.empty()
+metrica_estado_coche = col_m10.empty() 
 
 st.divider()
 
@@ -148,6 +151,29 @@ try:
                 st.session_state.accel_y.append(ay)
                 st.session_state.accel_z.append(az)
 
+                # --- LÓGICA DE DETECCIÓN DE MOVIMIENTO ---
+                if len(st.session_state.accel_x) >= 2:
+                    # Cálculo de los deltas entre la lectura actual y la anterior
+                    dx = abs(st.session_state.accel_x[-1] - st.session_state.accel_x[-2])
+                    dy = abs(st.session_state.accel_y[-1] - st.session_state.accel_y[-2])
+                    dz = abs(st.session_state.accel_z[-1] - st.session_state.accel_z[-2])
+                    
+                    # Extraer la última velocidad leída del bus CAN (OBD)
+                    vel_actual = st.session_state.speed_data[-1] if len(st.session_state.speed_data) > 0 else 0
+                    
+                    # Condición de reposo absoluto: Cero vibraciones inerciales y velocidad cero
+                    if dx < 0.05 and dy < 0.05 and dz < 0.05 and vel_actual == 0:
+                        st.session_state.contador_quieto += 1
+                    else:
+                        st.session_state.contador_quieto = 0
+                        
+                    # 5 tramas consecutivas para confirmación de estado
+                    if st.session_state.contador_quieto >= 5:
+                        st.session_state.estado_coche = "PARADO"
+                    else:
+                        st.session_state.estado_coche = "EN MOVIMIENTO"
+
+
             elif msg.arbitration_id == 0x102:
                 volts = bytes_to_float_escalado(msg.data[0], msg.data[1], escala=100.0)
                 watts = bytes_to_float_escalado(msg.data[4], msg.data[5], escala=1000.0)
@@ -156,6 +182,8 @@ try:
 
                 # ultima_luz = st.session_state.irr_data[-1] if len(st.session_state.irr_data) > 0 else 0
                 ultima_luz = st.session_state.irr_data[-1] if len(st.session_state.irr_data) > 0 else 10.0
+
+                luz_acotada = max(0.0, min(1000.0, ultima_luz))
 
                 if luz_acotada > 150.0:
                     ratio = luz_acotada / irr_eq_sol
@@ -214,6 +242,7 @@ try:
             metrica_x.metric("Eje X", f"{ax:.2f} g")
             metrica_y.metric("Eje Y", f"{ay:.2f} g")
             metrica_z.metric("Eje Z", f"{az:.2f} g")
+            metrica_estado_coche.metric("Estado del Vehículo", st.session_state.estado_coche)
 
             # GRÁFICA DE TEMPERATURA
             grafica_temp.line_chart(list(st.session_state.temp_data), color="#ff4b4b")
@@ -362,7 +391,7 @@ try:
 
             # Zoom y ajustes gráficos
             fig.update_layout(
-                title=f"Búsqueda del Codo | Irradiancia: {ultima_luz:.1f} W/m² | {nombre_estado}",
+                title=f"Búsqueda del MPP (Pto. máxima potencia)| Irradiancia: {ultima_luz:.1f} W/m² | {nombre_estado}",
                 xaxis_title="Voltaje [V]",
                 yaxis_title="Corriente [A]",
                 margin=dict(l=10, r=10, t=40, b=10),
@@ -371,7 +400,7 @@ try:
                 showlegend=True, 
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 plot_bgcolor='rgba(0,0,0,0)',
-                yaxis=dict(range=[-0.25, 3.05]) 
+                yaxis=dict(range=[-0.25, 2.55]) 
             )
             
             grafica_iv.plotly_chart(fig, width='stretch', key=f"grafica_iv_mppt_{ahora}")
